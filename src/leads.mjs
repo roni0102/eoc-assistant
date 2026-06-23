@@ -28,6 +28,22 @@ export const validCompany = (s) => norm(s).length >= 2;
 // the client handles a 401 by re-showing the gate.)
 const sessions = new Map();
 
+// Optional Google Sheets mirror: every new lead is POSTed to a Google Apps Script web
+// app (its URL in SHEETS_WEBHOOK_URL) which appends a row to a sheet on the user's Drive.
+// Fire-and-forget — a slow or failing webhook must never block or break sign-up, and if
+// the env var is unset this is a no-op (local dev / not yet configured).
+function sendToSheet(lead) {
+  const url = process.env.SHEETS_WEBHOOK_URL;
+  if (!url) return;
+  Promise.resolve()
+    .then(() => fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts: lead.ts, company: lead.company, email: lead.email, phone: lead.phone, tier: lead.tier }),
+    }))
+    .catch((e) => { try { console.error('sheets webhook failed:', e?.message || e); } catch {} });
+}
+
 /**
  * addLead({ email, phone, company }) -> { ok, token } | { ok:false, error }
  * Validates, appends the lead, and issues a session token.
@@ -42,6 +58,7 @@ export function addLead({ email, phone, company }) {
     fs.mkdirSync(path.dirname(LEADS_PATH), { recursive: true });
     fs.appendFileSync(LEADS_PATH, JSON.stringify(lead) + '\n');
   } catch (e) { return { ok: false, error: 'Could not record your details — please try again.' }; }
+  sendToSheet(lead); // mirror to Google Sheets (no-op unless SHEETS_WEBHOOK_URL is set)
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, lead.id);
   return { ok: true, token };
