@@ -91,9 +91,11 @@ function literalsRe(list) {
     .sort((a, b) => b.length - a.length) // longest first so "BTA-ESP-PFD-001" wins over "BTA"
     .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   // Word-boundary the alternation so a short code like "BTA" matches only as a standalone
-  // token — NOT the letters "bta" inside "obtain". Boundaries exclude any letter/number in
-  // ANY script (\p{L}\p{N}) so it works for both Latin and Hebrew entries.
-  return new RegExp('(?<![\\p{L}\\p{N}])(' + escaped.join('|') + ')(?![\\p{L}\\p{N}])', 'giu');
+  // token — NOT the letters "bta" inside "obtain". Boundaries exclude Latin letters/digits:
+  // this stops mid-word matches in ENGLISH text, while Hebrew entries stay effectively loose
+  // (a Hebrew letter is not [A-Za-z0-9], so a Hebrew name still matches when glued to a
+  // prefix like ב/ל/ה — important, since strict bounds there would MISS real names).
+  return new RegExp('(?<![A-Za-z0-9])(' + escaped.join('|') + ')(?![A-Za-z0-9])', 'gi');
 }
 
 const NAME_RE = literalsRe([...CLIENT_NAMES, ...PERSON_NAMES, ...DOC_IDS]);
@@ -140,9 +142,18 @@ export function scrubWith(text, names) {
   const list = [...(names || [])].filter(Boolean).sort((a, b) => b.length - a.length);
   for (const n of list) {
     const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = n.length >= 4
-      ? new RegExp(esc, 'gi')
-      : new RegExp('(?<![\\p{L}\\p{N}])' + esc + '(?![\\p{L}\\p{N}])', 'giu');
+    let re;
+    if (/[A-Za-z]/.test(n)) {
+      // Latin name → bound by Latin word chars at ANY length, so a harvested name never
+      // redacts the letters inside an unrelated English word (e.g. "obtain", "confirmed").
+      re = new RegExp('(?<![A-Za-z0-9])' + esc + '(?![A-Za-z0-9])', 'gi');
+    } else {
+      // Hebrew/other → keep loose matching for 4+ chars (catches prefixed forms like
+      // באשלים), but bound very short tokens to avoid redacting common 1–3 letter words.
+      re = n.length >= 4
+        ? new RegExp(esc, 'gi')
+        : new RegExp('(?<![\\p{L}\\p{N}])' + esc + '(?![\\p{L}\\p{N}])', 'giu');
+    }
     out = out.replace(re, '[redacted]');
   }
   return scrub(out);
