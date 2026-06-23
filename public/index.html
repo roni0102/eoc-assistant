@@ -163,10 +163,10 @@
   <div class="gate-card">
     <div class="gate-logo"><span class="a">EOC</span> <span class="b">Assistant</span></div>
     <div class="gate-sub">Tell us who you are to get started — then ask anything about your SI 6464 EOC, or upload it for a full review.</div>
-    <form id="gateForm" class="gate-form" autocomplete="on">
-      <input id="gCompany" type="text" placeholder="Company name" autocomplete="organization" required />
-      <input id="gEmail" type="email" placeholder="Work email" autocomplete="email" required />
-      <input id="gPhone" type="tel" placeholder="Phone number" autocomplete="tel" required />
+    <form id="gateForm" class="gate-form" autocomplete="on" novalidate>
+      <input id="gCompany" type="text" placeholder="Company name" autocomplete="organization" />
+      <input id="gEmail" type="email" placeholder="Work email" autocomplete="email" inputmode="email" />
+      <input id="gPhone" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" />
       <div id="gateErr" class="gate-err" hidden></div>
       <button type="submit" class="go" id="gateBtn">Enter</button>
     </form>
@@ -361,19 +361,27 @@ $('#sharedQA').addEventListener('toggle', ()=>{ if($('#sharedQA').open && !share
 function openGate(){ session=''; store.del('eoc_session'); $('#gate').hidden=false; document.body.classList.add('gated'); setTimeout(()=>$('#gCompany').focus(),50); }
 function closeGate(){ $('#gate').hidden=true; document.body.classList.remove('gated'); }
 if(!session){ openGate(); }
-$('#gateForm').addEventListener('submit', async (e)=>{
-  e.preventDefault();
+let gating=false;
+async function submitGate(){
+  if(gating) return;
   const company=$('#gCompany').value.trim(), email=$('#gEmail').value.trim(), phone=$('#gPhone').value.trim();
-  const err=$('#gateErr'); err.hidden=true;
+  const err=$('#gateErr'); const show=(m)=>{ err.textContent=m; err.hidden=false; };
+  if(company.length<2) return show('Please enter your company name.');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) return show('Please enter a valid email address.');
+  if((phone.match(/\d/g)||[]).length<7) return show('Please enter a valid phone number (at least 7 digits).');
+  err.hidden=true; gating=true;
   const btn=$('#gateBtn'); btn.disabled=true; btn.textContent='…';
   try{
     const r=await fetch('/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company,email,phone})});
-    const data=await r.json();
-    if(!r.ok){ err.textContent=data.error||'Please check your details.'; err.hidden=false; return; }
+    let data={}; try{ data=await r.json(); }catch{}
+    if(!r.ok){ show(data.error || ('Something went wrong ('+r.status+'). Please try again.')); return; }
+    if(!data.token){ show('Unexpected response — please try again.'); return; }
     session=data.token; store.set('eoc_session', session); closeGate();
-  }catch(ex){ err.textContent='Network error — please try again.'; err.hidden=false; }
-  finally{ btn.disabled=false; btn.textContent='Enter'; }
-});
+  }catch(ex){ show('Could not reach the server — check your connection and try again.'); }
+  finally{ gating=false; btn.disabled=false; btn.textContent='Enter'; }
+}
+$('#gateForm').addEventListener('submit',(e)=>{ e.preventDefault(); submitGate(); });
+$('#gateBtn').addEventListener('click',(e)=>{ e.preventDefault(); submitGate(); });
 
 // ---- tabs ----
 function showTab(prem){
