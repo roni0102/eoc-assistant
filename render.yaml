@@ -5,17 +5,17 @@ services:
   - type: web
     name: eoc-assistant
     runtime: node
-    plan: starter            # persistent disks require a paid plan (>= starter)
+    plan: free               # $0 — sleeps when idle; leads/Q&A reset on redeploy.
+                             # To make leads permanent later: change to "starter" and
+                             # re-add the DATA_DIR env + disk block (see DEPLOY.md).
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeploy: true         # redeploy on every push to the connected branch
     envVars:
-      # Runtime data (leads + shared Q&A) lives on the persistent disk so it
-      # survives redeploys. The KB artifacts (data/kb.json, data/standard.json)
-      # ship in the repo and are read from there.
-      - key: DATA_DIR
-        value: /var/data
+      # KB artifacts (data/kb.json, data/standard.json) ship in the repo and are
+      # read from there. On free there is no persistent disk, so leads + shared Q&A
+      # are written under the app's data/ folder and reset on redeploy.
       - key: ANTHROPIC_API_KEY   # required — set in the dashboard
         sync: false
       - key: LEADS_ADMIN_KEY     # required to enable the /leads/export CSV
@@ -24,7 +24,3 @@ services:
         sync: false
       - key: EOC_MODEL           # optional — defaults to claude-opus-4-8
         sync: false
-    disk:
-      name: eoc-data
-      mountPath: /var/data
-      sizeGB: 1
