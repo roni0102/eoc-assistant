@@ -123,12 +123,16 @@ export async function translate(text, lang = 'he') {
     model: TRANSLATE_MODEL,
     max_tokens: 2000,
     system:
-      `Translate the user's message into natural, professional ${name}. Rules: keep ALL clause ` +
-      'numbers and standard references EXACTLY as written (e.g. SI 6464, §7.2.1.5, EN 746-2, ISO, ' +
-      'IEC, NFPA); keep technical/engineering terms accurate (boiler, furnace, water heater, ' +
-      'corrosion allowance, etc.); preserve the markdown formatting exactly (**bold**, bullet ' +
-      `lists, line breaks); translate the closing disclaimer line too. Output ONLY the ${name} ` +
-      'translation — no preamble, no explanation.',
+      `Translate the user's message into natural, professional ${name}. Rules:\n` +
+      '- Keep ALL clause numbers and standard references EXACTLY as written, in Latin script ' +
+      '(e.g. SI 6464, §7.2.1.5, EN 746-2, ISO, IEC, NFPA, ASME).\n' +
+      '- Keep technical acronyms and abbreviations in their ORIGINAL ENGLISH form — do NOT ' +
+      'translate or transliterate them (e.g. IAA, EOC, IB, HAC, RTO, PE, CS, NDT, ATEX, P&ID, ' +
+      'PSV, PFD, MOC). Translate only the surrounding sentence around them.\n' +
+      '- Keep engineering nouns accurate (boiler, furnace, water heater, corrosion allowance).\n' +
+      '- Preserve the markdown formatting exactly (**bold**, bullet lists, line breaks).\n' +
+      '- Translate the closing disclaimer line too.\n' +
+      `Output ONLY the ${name} translation — no preamble, no explanation.`,
     messages: [{ role: 'user', content: String(text).slice(0, 8000) }],
   });
   const out = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
