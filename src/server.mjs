@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { retrieve, retrieveStandard, loadKB, loadStandard } from './retrieve.mjs';
 import { composeAnswer } from './answer.mjs';
-import { answerWithLLM, llmAvailable, MODEL } from './llm.mjs';
+import { answerWithLLM, translateToHebrew, llmAvailable, MODEL } from './llm.mjs';
 import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
 import * as qalog from './qalog.mjs';
@@ -106,6 +106,20 @@ app.get('/qa/recent', rateLimit, (req, res) => {
   const q = String(req.query?.q ?? '').trim();
   const items = q ? qalog.search(q, 12) : qalog.recent(20);
   res.json({ items, total: qalog.stats().total });
+});
+
+// Translate an answer to Hebrew on demand (per-answer button in the UI).
+app.post('/translate', rateLimit, requireGate, async (req, res) => {
+  const text = String(req.body?.text ?? '').slice(0, 8000).trim();
+  if (!text) return res.status(400).json({ error: 'Nothing to translate.' });
+  if (!llmAvailable()) return res.status(503).json({ error: 'Translation needs the LLM — set ANTHROPIC_API_KEY.' });
+  try {
+    const r = await translateToHebrew(text);
+    res.json({ he: r.text });
+  } catch (e) {
+    console.error('[translate] failed:', e?.message || e);
+    res.status(500).json({ error: 'Could not translate right now — please try again.' });
+  }
 });
 
 app.post('/ask', rateLimit, requireGate, async (req, res) => {

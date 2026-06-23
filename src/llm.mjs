@@ -12,6 +12,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { scanAnswer } from './anonymize.mjs';
 
 const MODEL = process.env.EOC_MODEL || 'claude-opus-4-8';
+// Translation is a simple, high-volume-friendly task → default to fast/cheap Haiku.
+const TRANSLATE_MODEL = process.env.TRANSLATE_MODEL || 'claude-haiku-4-5-20251001';
 
 let client = null;
 const getClient = () => (client ||= new Anthropic()); // reads ANTHROPIC_API_KEY
@@ -105,6 +107,34 @@ export async function answerWithLLM({ query, cards, standard, history }) {
     throw e;
   }
   return { text, model: MODEL };
+}
+
+/**
+ * translateToHebrew(text): translate an already-generated (already anonymity-guarded)
+ * English answer into natural professional Hebrew, preserving clause numbers, standard
+ * references and markdown. Re-checked against the anonymity guard (fail-closed).
+ */
+export async function translateToHebrew(text) {
+  const res = await getClient().messages.create({
+    model: TRANSLATE_MODEL,
+    max_tokens: 2000,
+    system:
+      'Translate the user\'s message into natural, professional Hebrew. Rules: keep ALL clause ' +
+      'numbers and standard references EXACTLY as written (e.g. SI 6464, §7.2.1.5, EN 746-2, ISO, ' +
+      'IEC, NFPA); keep technical/engineering terms accurate (boiler, furnace, water heater, ' +
+      'corrosion allowance, etc.); preserve the markdown formatting exactly (**bold**, bullet ' +
+      'lists, line breaks); translate the closing disclaimer line too. Output ONLY the Hebrew ' +
+      'translation — no preamble, no explanation.',
+    messages: [{ role: 'user', content: String(text).slice(0, 8000) }],
+  });
+  const out = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  const hits = scanAnswer(out);
+  if (hits.length) {
+    const e = new Error(`translation blocked by anonymity guard: ${hits.map((h) => h.match).join(', ')}`);
+    e.code = 'ANON_BLOCK';
+    throw e;
+  }
+  return { text: out, model: TRANSLATE_MODEL };
 }
 
 export { MODEL };
