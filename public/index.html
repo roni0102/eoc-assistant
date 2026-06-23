@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EOC Assistant</title>
+<style>
+  :root{
+    --ink:#1a2332; --muted:#6b7688; --line:#e3e8ef; --bg:#f7f9fc;
+    --brand:#0b5fa5; --brand-dark:#084a82; --accent:#10a37f; --card:#fff;
+    --warn:#b9770e; --risk:#c0392b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.55}
+  .wrap{max-width:820px;margin:0 auto;padding:0 20px}
+  header.hero{padding:22px 0 14px;text-align:center}
+  .logo{font-size:30px;font-weight:800;letter-spacing:-.5px}
+  .logo .a{color:var(--brand)} .logo .b{color:var(--accent)}
+  .tag{color:var(--muted);margin-top:8px;font-size:15px}
+  .searchbar{display:flex;align-items:center;gap:10px;margin:26px auto 6px;max-width:660px;
+    background:var(--card);border:1px solid var(--line);border-radius:30px;padding:8px 8px 8px 20px;
+    box-shadow:0 4px 18px rgba(20,40,80,.06)}
+  .searchbar:focus-within{border-color:var(--brand);box-shadow:0 4px 22px rgba(11,95,165,.16)}
+  #q{flex:1;border:0;outline:0;font-size:17px;padding:8px 0;background:transparent;color:var(--ink)}
+  .go{background:var(--brand);color:#fff;border:0;border-radius:24px;padding:11px 22px;
+    font-size:15px;font-weight:600;cursor:pointer}
+  .go:hover{background:var(--brand-dark)} .go:disabled{opacity:.5;cursor:default}
+  .hint{color:var(--muted);font-size:13px;text-align:center;margin-top:12px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:16px 0 0}
+  .chip{font-size:13px;background:#eef3fa;color:var(--brand-dark);border:1px solid #dfeaf6;
+    border-radius:16px;padding:6px 13px;cursor:pointer}
+  .chip:hover{background:#e2edf9}
+  #results{margin:28px 0 80px}
+  .meta{color:var(--muted);font-size:13px;margin-bottom:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;
+    margin-bottom:16px;box-shadow:0 1px 3px rgba(20,40,80,.04)}
+  .lineno{display:inline-block;background:var(--brand);color:#fff;font-weight:700;font-size:13px;
+    border-radius:7px;padding:3px 10px;margin-right:10px}
+  .sect{display:inline-block;font-size:11px;letter-spacing:.4px;text-transform:uppercase;
+    color:var(--muted);font-weight:600}
+  .doc{font-size:18px;font-weight:700;margin:10px 0 4px}
+  .block{margin-top:14px}
+  .block h4{margin:0 0 5px;font-size:12px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
+  .block .body{font-size:15px;white-space:pre-wrap}
+  .rtl{direction:rtl;text-align:right}
+  .answer{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:14px;padding:18px 22px;margin-bottom:14px;box-shadow:0 1px 3px rgba(20,40,80,.05)}
+  .answer-h{font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:8px}
+  .answer-b{font-size:16px;line-height:1.6;white-space:normal}
+  /* chat bubbles */
+  .msg{margin:12px 0;display:flex;flex-direction:column}
+  .msg.user{align-items:flex-end}
+  .msg.user .answer-b{background:var(--brand);color:#fff;border-radius:16px 16px 4px 16px;
+    padding:11px 16px;max-width:80%;font-size:15px;box-shadow:0 1px 3px rgba(11,95,165,.18)}
+  .msg.bot{align-items:stretch}
+  .msg.bot>.answer-h,.msg.bot>.meta-sm,.msg.bot>.answer-b,.msg.bot>.sources,.msg.bot>.disc{width:100%}
+  .msg.bot{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:14px;padding:16px 20px;box-shadow:0 1px 3px rgba(20,40,80,.05)}
+  .meta-sm{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .muted{color:var(--muted)}
+  .msg.pending .answer-b.muted::after{content:'';animation:dots 1.2s steps(4,end) infinite}
+  @keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+  .notfound{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px 14px}
+  details.sources{margin-bottom:16px}
+  details.sources summary{font-size:13px;color:var(--brand-dark);cursor:pointer;padding:6px 0}
+  .corpus{display:inline-block;font-size:11px;font-weight:600;color:var(--accent);
+    background:#e9f9f3;border:1px solid #c7efe1;border-radius:12px;padding:2px 9px;margin-left:8px}
+  .pat{border-left:3px solid var(--line);padding:6px 0 6px 12px;margin:8px 0}
+  .pat.dom{border-left-color:var(--accent);background:#f6fbf9}
+  .patmeta{font-size:12px;color:var(--muted);margin-bottom:3px}
+  .freq{display:inline-block;font-size:11px;color:var(--brand-dark);background:#eef3fa;
+    border-radius:10px;padding:1px 8px}
+  .ib{border-left:3px solid var(--accent);padding:8px 0 8px 12px;margin:10px 0}
+  .ib .out{font-weight:700;font-size:13px}
+  .ib .out.cond{color:var(--warn)} .ib .out.risk{color:var(--risk)}
+  .ib .cmt,.pat .cmt{font-size:14px;margin-top:3px;white-space:pre-wrap}
+  .ib .close{font-size:13px;color:var(--muted);margin-top:4px;white-space:pre-wrap}
+  .pit{margin:6px 0 0;padding-left:20px;font-size:14px} .pit li{margin:3px 0}
+  details.scaffold{margin-top:14px;border-top:1px dashed var(--line);padding-top:8px}
+  details.scaffold summary{font-size:12px;color:var(--muted);cursor:pointer;letter-spacing:.3px}
+  .refs{font-size:12px;color:var(--muted);margin-top:14px}
+  .disc{font-size:12px;color:var(--muted);font-style:italic;border-top:1px dashed var(--line);
+    padding-top:10px;margin-top:16px}
+  .notfound{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+  /* entry gate */
+  .gate{position:fixed;inset:0;z-index:100;background:linear-gradient(160deg,#0b5fa5,#0a4a82);
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .gate-card{background:#fff;border-radius:18px;padding:34px 32px;max-width:420px;width:100%;
+    box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
+  .gate-logo{font-size:30px;font-weight:800;letter-spacing:-.5px;margin-bottom:8px}
+  .gate-logo .a{color:var(--brand)} .gate-logo .b{color:var(--accent)}
+  .gate-sub{color:var(--muted);font-size:14.5px;line-height:1.55;margin-bottom:22px}
+  .gate-form{display:flex;flex-direction:column;gap:10px}
+  .gate-form input{border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:15px}
+  .gate-form input:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px rgba(11,95,165,.12)}
+  .gate-form .go{margin-top:4px;padding:13px;font-size:16px;border-radius:10px}
+  .gate-err{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;padding:8px 12px;font-size:13px;text-align:left}
+  .gate-consent{font-size:12px;color:var(--muted);margin-top:16px;line-height:1.5}
+  body.gated{overflow:hidden}
+  /* top navigation bar */
+  .topnav{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line)}
+  .topnav-in{max-width:920px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;
+    justify-content:space-between;gap:12px}
+  .brand-sm{font-size:18px;font-weight:800;letter-spacing:-.3px}
+  .brand-sm .a{color:var(--brand)} .brand-sm .b{color:var(--accent)}
+  /* tabs */
+  .tabs{display:flex;gap:8px;align-items:center}
+  .tab{background:#eef2f7;border:1px solid var(--line);color:var(--muted);border-radius:20px;
+    padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;transition:box-shadow .15s,filter .15s}
+  /* free tab — subdued; active just darkens slightly */
+  #tabFree.active{background:#dbe3ee;color:var(--ink)}
+  /* premium tab — always gold & prominent (the upsell) */
+  .tab.premium{background:linear-gradient(135deg,#fcd34d,#e6a008);border-color:#cf9412;
+    color:#3d2c00;font-weight:700;box-shadow:0 2px 10px rgba(214,158,20,.35)}
+  .tab.premium::before{content:"\2605\00a0";color:#7a5a00}
+  .tab.premium:hover{filter:brightness(1.05)}
+  .tab.premium.active{box-shadow:0 0 0 3px rgba(214,158,20,.4),0 3px 12px rgba(214,158,20,.45)}
+  @media(max-width:560px){.topnav-in{flex-direction:column;gap:8px}.tab{padding:7px 12px;font-size:13px}}
+  /* premium */
+  .prem-intro{font-size:14px;color:var(--ink);background:#f0f6fc;border:1px solid #d6e6f5;
+    border-radius:12px;padding:14px 18px;margin-bottom:14px;line-height:1.55}
+  .prem-form{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px}
+  .filebox{flex:1;min-width:240px;border:1.5px dashed var(--line);border-radius:12px;padding:14px 18px;
+    background:var(--card);color:var(--muted);font-size:14px;cursor:pointer;text-align:center}
+  .filebox.has{border-color:var(--accent);color:var(--ink)}
+  .filebox.drag{border-color:var(--brand);background:#eef3fa}
+  .license{border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:14px;width:230px}
+  #reviewBtn{white-space:nowrap}
+  .scoreboard{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+  .score{flex:1;min-width:90px;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:var(--card)}
+  .score .n{font-size:26px;font-weight:800;line-height:1}
+  .score .l{font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-top:4px}
+  .score.pass .n{color:#2f9e44} .score.atrisk .n{color:var(--warn)} .score.fail .n{color:var(--risk)}
+  .score.na .n{color:#7d6608} .score.missing .n{color:var(--muted)}
+  .rev{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-bottom:10px;border-left:4px solid var(--line)}
+  .rev.PASS{border-left-color:#2f9e44} .rev.AT_RISK{border-left-color:var(--warn)}
+  .rev.FAIL{border-left-color:var(--risk)} .rev.N\/A{border-left-color:#7d6608} .rev.MISSING{border-left-color:#cbd5e1}
+  .rev-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .vbadge{font-size:11px;font-weight:700;letter-spacing:.4px;padding:3px 9px;border-radius:7px;color:#fff}
+  .vbadge.PASS{background:#2f9e44} .vbadge.AT_RISK{background:var(--warn)} .vbadge.FAIL{background:var(--risk)}
+  .vbadge.N\/A{background:#7d6608} .vbadge.MISSING{background:#94a3b8}
+  .rev .req{font-size:13px;color:var(--muted);margin:6px 0}
+  .rev .line{font-size:14px;margin-top:7px} .rev .line b{color:var(--brand-dark)}
+  .dl{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;
+    padding:11px 20px;font-weight:600;font-size:15px;margin:6px 0 14px}
+  /* shared Q&A */
+  details.shared{margin:22px 0 60px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+  details.shared>summary{cursor:pointer;font-weight:600;font-size:14px;padding:13px 18px;list-style:none}
+  details.shared>summary::-webkit-details-marker{display:none}
+  .shared-note{font-size:12px;color:var(--muted);padding:0 18px 6px}
+  #sharedList{padding:0 8px 10px}
+  .qa{border-top:1px solid var(--line);padding:10px 10px}
+  .qa-q{font-size:14px;font-weight:600;color:var(--brand-dark);cursor:pointer;display:flex;gap:8px}
+  .qa-q:hover{color:var(--brand)}
+  .qa-q .clause{font-size:11px;color:var(--muted);font-weight:500;white-space:nowrap}
+  .qa-a{font-size:13.5px;line-height:1.55;color:var(--ink);margin-top:8px;padding-left:4px;border-left:3px solid var(--line)}
+  .qa-a{padding:8px 0 4px 12px}
+</style>
+</head>
+<body>
+<div id="gate" class="gate" hidden>
+  <div class="gate-card">
+    <div class="gate-logo"><span class="a">EOC</span> <span class="b">Assistant</span></div>
+    <div class="gate-sub">Tell us who you are to get started — then ask anything about your SI 6464 EOC, or upload it for a full review.</div>
+    <form id="gateForm" class="gate-form" autocomplete="on">
+      <input id="gCompany" type="text" placeholder="Company name" autocomplete="organization" required />
+      <input id="gEmail" type="email" placeholder="Work email" autocomplete="email" required />
+      <input id="gPhone" type="tel" placeholder="Phone number" autocomplete="tel" required />
+      <div id="gateErr" class="gate-err" hidden></div>
+      <button type="submit" class="go" id="gateBtn">Enter</button>
+    </form>
+    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions are anonymized; we never reveal any client or site.</div>
+  </div>
+</div>
+
+<div class="topnav">
+  <div class="topnav-in">
+    <div class="brand-sm"><span class="a">EOC</span> <span class="b">Assistant</span></div>
+    <div class="tabs">
+      <button class="tab active" id="tabFree">Ask — free</button>
+      <button class="tab premium" id="tabPrem">Full EOC review — Premium</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="tag">SI 6464 (2017), Chapters 4–7 — natural-gas piping &amp; industrial appliances (steam boilers, furnaces, water heaters, turbines &amp; more). Ask by clause (e.g. 7.2.1.5) or describe an issue; answers draw on past EOCs, fully anonymized.</div>
+  </header>
+
+  <div id="freeView">
+    <div class="searchbar">
+      <input id="q" type="text" placeholder="e.g. &quot;7.2.1.5&quot;, &quot;wall thickness&quot;, &quot;hydrostatic test&quot;, &quot;נוהל הגפה&quot;" autocomplete="off" />
+      <button class="go" id="go">Ask</button>
+    </div>
+    <div class="hint">Ask a question, then keep the conversation going with follow-ups. Answers are generic and anonymous.</div>
+    <div class="chips" id="chips"></div>
+    <div id="results"></div>
+    <details class="shared" id="sharedQA">
+      <summary>Questions other clients have asked <span class="muted" id="sharedCount"></span></summary>
+      <div class="shared-note">Anonymized and shared to help everyone — no client or site is identified.</div>
+      <div id="sharedList" class="muted">Loading…</div>
+    </details>
+  </div>
+
+  <div id="premiumView" hidden>
+    <div class="prem-intro">Upload your filled EOC (.xlsx) and get it back reviewed line-by-line as ITL would — a verdict, the inspector's remark, the IB comment likely to come back, and a suggested fix for each answered row, plus a colour-coded annotated workbook to download. <b>Your file is processed in memory only — never stored.</b></div>
+    <div class="prem-form">
+      <label class="filebox" id="filebox">
+        <input id="eocFile" type="file" accept=".xlsx" hidden />
+        <span id="fileLabel">Choose or drop your EOC .xlsx…</span>
+      </label>
+      <input id="license" class="license" type="text" placeholder="License key (leave blank in dev mode)" autocomplete="off" />
+      <button class="go" id="reviewBtn">Review my EOC</button>
+    </div>
+    <div id="reviewOut"></div>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+// resilient storage (sandboxed iframes / private mode can block localStorage)
+const store = {
+  get(k){ try{ return localStorage.getItem(k)||''; }catch{ return ''; } },
+  set(k,v){ try{ localStorage.setItem(k,v); }catch{} },
+  del(k){ try{ localStorage.removeItem(k); }catch{} },
+};
+let session = store.get('eoc_session');
+const EX = ['7.2', 'wall thickness', 'cathodic protection', 'steam boiler combustion air', 'gas turbine ventilation', 'furnace gas train', 'thermal oil heater', '4.3.3'];
+const chips = $('#chips');
+EX.forEach((e) => { const c = document.createElement('span'); c.className='chip'; c.textContent=e;
+  c.onclick=()=>{ $('#q').value=e; ask(); }; chips.appendChild(c); });
+
+const isHe = (s) => /[֐-׿]/.test(s || '');
+const esc = (s) => (s||'').replace(/[&<>]/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function rtlAttr(s){ return isHe(s) ? ' class="body rtl"' : ' class="body"'; }
+
+function freqTag(n){ return `<span class="freq">${n} project${n>1?'s':''}</span>`; }
+
+function acceptedBlock(p){
+  return `<div class="pat${p.is_dominant?' dom':''}">
+    <div class="patmeta">${p.is_dominant?'<b>Most common accepted approach</b> · ':''}${freqTag(p.frequency)}</div>
+    <div class="cmt"${isHe(p.pattern)?' dir="rtl"':''}>${esc(p.pattern)}</div>
+  </div>`;
+}
+function ibBlock(r){
+  let cls = ''; if(/condition/.test(r.outcome)) cls=' cond'; if(/comment/.test(r.outcome)) cls=' risk';
+  return `<div class="ib">
+    <div class="out${cls}">IB ${esc(r.outcome)} · ${freqTag(r.frequency)}</div>
+    <div class="cmt"${isHe(r.ib_comment)?' dir="rtl"':''}>${esc(r.ib_comment)}</div>
+    ${r.closing_note?`<div class="close"${isHe(r.closing_note)?' dir="rtl"':''}>Closing approach: ${esc(r.closing_note)}</div>`:''}
+  </div>`;
+}
+
+function card(c){
+  const acc = (c.accepted_reply_patterns||[]);
+  const ib = (c.ib_responses||[]);
+  const pit = (c.common_pitfalls||[]);
+  return `<div class="card">
+    <div><span class="lineno">${esc(c.form||'')} §${esc(c.clause)}</span><span class="sect">${esc(c.section||'')}</span>
+      ${c.corpus_count?`<span class="corpus">learned from ${c.corpus_count} past EOC${c.corpus_count>1?'s':''}</span>`:''}</div>
+    ${c.requirement?`<div class="doc"${isHe(c.requirement)?' dir="rtl"':''}>${esc(c.requirement)}</div>`:`<div class="doc">SI 6464 §${esc(c.clause)}</div>`}
+
+    <div class="block"><h4>How this item is actually answered (from the corpus)</h4>
+      ${acc.length?acc.map(acceptedBlock).join('')
+        :`<div class="body" style="color:var(--muted)">No anonymized accepted-reply pattern captured for this item yet.</div>`}</div>
+
+    ${ib.length?`<div class="block"><h4>IB comments seen on this item & how it closes</h4>${ib.map(ibBlock).join('')}</div>`:''}
+
+    ${pit.length?`<div class="block"><h4>Common pitfalls</h4><ul class="pit">${pit.map(p=>`<li${isHe(p)?' dir="rtl"':''}>${esc(p)}</li>`).join('')}</ul></div>`:''}
+
+    <details class="scaffold"><summary>Requirement &amp; standard reply (reference scaffold)</summary>
+      ${c.requirement?`<div class="block"><h4>What this line requires</h4><div${rtlAttr(c.requirement)}>${esc(c.requirement)}</div></div>`:''}
+      ${c.standard_reply?`<div class="block"><h4>Standard reply (from the form)</h4><div${rtlAttr(c.standard_reply)}>${esc(c.standard_reply)}</div></div>`:''}
+    </details>
+    ${c.source_refs&&c.source_refs.length?`<div class="refs">Source: ${c.source_refs.map(esc).join(' · ')}</div>`:''}
+  </div>`;
+}
+
+const md = (s)=>esc(s)
+  .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+  .replace(/^\s*[-•]\s+/gm,'• ')
+  .replace(/\n/g,'<br>');
+
+// ---- conversation state (stateless backend; the browser holds the thread) ----
+const convo = [];            // [{role:'user'|'assistant', content}]
+const thread = $('#results');
+
+function bubble(cls, inner){
+  const d = document.createElement('div');
+  d.className = 'msg '+cls;
+  d.innerHTML = inner;
+  thread.appendChild(d);
+  d.scrollIntoView({behavior:'smooth', block:'end'});
+  return d;
+}
+
+function renderAnswer(data){
+  if(!data.covered){
+    return `<div class="answer-b">${esc(data.message)}</div><div class="disc">${esc(data.disclaimer)}</div>`;
+  }
+  const ground = data.llm_answer
+    ? `answered by ${esc(data.llm_model||'AI')}, grounded in ${(data.standard_sources&&data.standard_sources.length)?'SI 6464 + ':''}${data.cards.length} past-EOC clause${data.cards.length>1?'s':''}`
+    : `${data.cards.length} matching clause${data.cards.length>1?'s':''} from the corpus`;
+  const body = data.llm_answer
+    ? `<div class="answer-b"${isHe(data.llm_answer)?' dir="rtl"':''}>${md(data.llm_answer)}</div>`
+    : data.cards.map(card).join('');
+  const sources = data.cards && data.cards.length
+    ? `<details class="sources"><summary>Sources — ${data.cards.length} clause card${data.cards.length>1?'s':''} from the corpus</summary>${data.cards.map(card).join('')}</details>`
+    : '';
+  return `<div class=" meta-sm">${ground}</div>${body}${data.llm_answer?sources:''}`;
+}
+
+let busy = false;
+async function ask(){
+  if(busy) return;
+  const q = $('#q').value.trim(); if(!q) return;
+  $('#q').value=''; chips.style.display='none';
+  busy=true; const btn=$('#go'); btn.disabled=true; btn.textContent='…';
+  bubble('user', `<div class="answer-b"${isHe(q)?' dir="rtl"':''}>${esc(q)}</div>`);
+  const pending = bubble('bot pending', '<div class="answer-h">Assistant</div><div class="answer-b muted">Thinking…</div>');
+  try{
+    const res = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json','x-session':session},
+      body: JSON.stringify({q, history: convo})});
+    const data = await res.json();
+    if(res.status===401 && data.gate){ openGate(); pending.remove(); return; }
+    if(!res.ok){ pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b notfound">${esc(data.error||'Error')}</div>`; return; }
+    pending.classList.remove('pending');
+    pending.innerHTML = `<div class="answer-h">Assistant</div>${renderAnswer(data)}`;
+    pending.scrollIntoView({behavior:'smooth', block:'start'});
+    // record the turn so follow-ups have context
+    const answerText = data.llm_answer || (data.covered ? `(${data.cards.length} matching clauses shown)` : data.message);
+    convo.push({role:'user', content:q}, {role:'assistant', content:answerText});
+    sharedLoaded = false; // new Q&A recorded — refresh the shared list on next open
+  }catch(e){ pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b notfound">Network error: ${esc(e.message)}</div>`; }
+  finally{ busy=false; btn.disabled=false; btn.textContent='Ask'; $('#q').focus(); }
+}
+$('#go').onclick = ask;
+$('#q').addEventListener('keydown', (e)=>{ if(e.key==='Enter') ask(); });
+
+// ---- shared Q&A (questions other clients have asked) ----
+let sharedLoaded=false;
+async function loadShared(){
+  try{
+    const r=await fetch('/qa/recent'); const data=await r.json();
+    $('#sharedCount').textContent = data.total ? `· ${data.total} asked so far` : '';
+    const list=$('#sharedList');
+    if(!data.items.length){ list.innerHTML='<div class="qa muted">No shared questions yet — be the first to ask.</div>'; return; }
+    list.classList.remove('muted');
+    list.innerHTML = data.items.map((it,i)=>`<div class="qa">
+      <div class="qa-q" data-i="${i}"><span>${esc(it.q)}</span>${it.clauses&&it.clauses.length?`<span class="clause">§${esc(it.clauses[0])}</span>`:''}</div>
+      <div class="qa-a" id="qa-a-${i}" hidden${isHe(it.a)?' dir="rtl"':''}>${md(it.a)}</div>
+    </div>`).join('');
+    list.querySelectorAll('.qa-q').forEach(el=>el.onclick=()=>{ const a=$('#qa-a-'+el.dataset.i); a.hidden=!a.hidden; });
+  }catch(e){ $('#sharedList').innerHTML='<div class="qa muted">Could not load shared questions.</div>'; }
+}
+$('#sharedQA').addEventListener('toggle', ()=>{ if($('#sharedQA').open && !sharedLoaded){ sharedLoaded=true; loadShared(); } });
+
+// ---- entry gate (lead capture) ----
+function openGate(){ session=''; store.del('eoc_session'); $('#gate').hidden=false; document.body.classList.add('gated'); setTimeout(()=>$('#gCompany').focus(),50); }
+function closeGate(){ $('#gate').hidden=true; document.body.classList.remove('gated'); }
+if(!session){ openGate(); }
+$('#gateForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const company=$('#gCompany').value.trim(), email=$('#gEmail').value.trim(), phone=$('#gPhone').value.trim();
+  const err=$('#gateErr'); err.hidden=true;
+  const btn=$('#gateBtn'); btn.disabled=true; btn.textContent='…';
+  try{
+    const r=await fetch('/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company,email,phone})});
+    const data=await r.json();
+    if(!r.ok){ err.textContent=data.error||'Please check your details.'; err.hidden=false; return; }
+    session=data.token; store.set('eoc_session', session); closeGate();
+  }catch(ex){ err.textContent='Network error — please try again.'; err.hidden=false; }
+  finally{ btn.disabled=false; btn.textContent='Enter'; }
+});
+
+// ---- tabs ----
+function showTab(prem){
+  $('#tabFree').classList.toggle('active', !prem);
+  $('#tabPrem').classList.toggle('active', prem);
+  $('#freeView').hidden = prem; $('#premiumView').hidden = !prem;
+}
+$('#tabFree').onclick=()=>showTab(false);
+$('#tabPrem').onclick=()=>showTab(true);
+
+// ---- premium: full EOC review ----
+const fileInput=$('#eocFile'), fileLabel=$('#fileLabel'), filebox=$('#filebox');
+filebox.onclick=()=>fileInput.click();
+fileInput.onchange=()=>{ if(fileInput.files[0]){ fileLabel.textContent=fileInput.files[0].name; filebox.classList.add('has'); } };
+['dragover','dragenter'].forEach(ev=>filebox.addEventListener(ev,e=>{e.preventDefault();filebox.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>filebox.addEventListener(ev,e=>{e.preventDefault();filebox.classList.remove('drag');}));
+filebox.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f){ fileInput.files=e.dataTransfer.files; fileLabel.textContent=f.name; filebox.classList.add('has'); } });
+
+function scoreCard(n,label,cls){ return `<div class="score ${cls}"><div class="n">${n}</div><div class="l">${label}</div></div>`; }
+function revCard(it){
+  const v=it.verdict||'?';
+  return `<div class="rev ${v}">
+    <div class="rev-head"><span class="vbadge ${v}">${esc(v)}</span><b>§${esc(it.clause)}</b>
+      ${it.observed_in_projects?`<span class="freq">${it.observed_in_projects} past EOCs</span>`:''}</div>
+    ${it.requirement?`<div class="req"${isHe(it.requirement)?' dir="rtl"':''}>${esc(it.requirement)}</div>`:''}
+    ${it.client_answer?`<div class="line"><b>Your reply:</b> ${esc(it.client_answer)}</div>`:''}
+    ${it.col_D?`<div class="line"><b>ITL remark:</b> ${esc(it.col_D)}</div>`:''}
+    ${it.predicted_ib?`<div class="line"><b>IB will likely say:</b> ${esc(it.predicted_ib)}</div>`:''}
+    ${it.suggested_fix?`<div class="line"><b>Suggested fix:</b> ${esc(it.suggested_fix)}</div>`:''}
+  </div>`;
+}
+
+let reviewing=false;
+$('#reviewBtn').onclick=async ()=>{
+  if(reviewing) return;
+  const f=fileInput.files[0];
+  const out=$('#reviewOut');
+  if(!f){ out.innerHTML='<div class="rev notfound">Please choose an EOC .xlsx file first.</div>'; return; }
+  reviewing=true; const btn=$('#reviewBtn'); btn.disabled=true; btn.textContent='Reviewing…';
+  out.innerHTML='<div class="meta-sm">Uploading and reviewing your EOC line-by-line — this can take a minute for a large file…</div>';
+  try{
+    const fd=new FormData();
+    fd.append('eoc', f);
+    const lic=$('#license').value.trim(); if(lic) fd.append('license', lic);
+    const headers={'x-session':session}; if(lic) headers['x-license-key']=lic;
+    const res=await fetch('/review',{method:'POST', body:fd, headers});
+    const data=await res.json();
+    if(res.status===401 && data.gate){ openGate(); return; }
+    if(!res.ok){ out.innerHTML=`<div class="rev notfound">${esc(data.error||'Review failed.')}</div>`; return; }
+    const s=data.scoreboard;
+    const board=`<div class="scoreboard">
+      ${scoreCard(s.PASS,'Pass','pass')}
+      ${scoreCard(s.AT_RISK,'At risk','atrisk')}
+      ${scoreCard(s.FAIL,'Fail','fail')}
+      ${scoreCard(s.N_A,'N/A','na')}
+      ${scoreCard(s.MISSING,'Missing','missing')}
+    </div>`;
+    const head=`<div class="meta-sm"><b>${esc(data.type)} EOC</b> · ${data.answered_rows} answered rows · reviewed ${data.reviewed_rows}${data.capped?` (first ${data.cap} — raise the limit for the full audit)`:''}${data.dev_mode?' · dev mode (no license required)':''}</div>`;
+    const dl=`<a class="dl" href="/review/download/${data.download_token}">⬇ Download annotated EOC (.xlsx)</a>`;
+    const cards=data.items.filter(i=>i.verdict).map(revCard).join('');
+    out.innerHTML = head + board + dl + cards + `<div class="disc">${esc(data.disclaimer)}</div>`;
+  }catch(e){ out.innerHTML=`<div class="rev notfound">Network error: ${esc(e.message)}</div>`; }
+  finally{ reviewing=false; btn.disabled=false; btn.textContent='Review my EOC'; }
+};
+</script>
+</body>
+</html>

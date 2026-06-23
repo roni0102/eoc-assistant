@@ -1,0 +1,4 @@
+node_modules/
+.env
+data/qa_log.jsonl
+data/leads.jsonl

@@ -1,0 +1,30 @@
+# Render Blueprint — one-click deploy of the EOC Assistant.
+# In Render: New + → Blueprint → connect this repo. Render reads this file.
+# Secrets (sync:false) are entered once in the Render dashboard, never committed.
+services:
+  - type: web
+    name: eoc-assistant
+    runtime: node
+    plan: starter            # persistent disks require a paid plan (>= starter)
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true         # redeploy on every push to the connected branch
+    envVars:
+      # Runtime data (leads + shared Q&A) lives on the persistent disk so it
+      # survives redeploys. The KB artifacts (data/kb.json, data/standard.json)
+      # ship in the repo and are read from there.
+      - key: DATA_DIR
+        value: /var/data
+      - key: ANTHROPIC_API_KEY   # required — set in the dashboard
+        sync: false
+      - key: LEADS_ADMIN_KEY     # required to enable the /leads/export CSV
+        sync: false
+      - key: PREMIUM_LICENSE_KEYS # optional — comma-separated keys; blank = premium open
+        sync: false
+      - key: EOC_MODEL           # optional — defaults to claude-opus-4-8
+        sync: false
+    disk:
+      name: eoc-data
+      mountPath: /var/data
+      sizeGB: 1
