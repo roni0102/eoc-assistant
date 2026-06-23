@@ -88,6 +88,8 @@
   .trbtn{background:#eef3fa;color:var(--brand-dark);border:1px solid #d6e2f0;border-radius:8px;
     padding:5px 11px;font-size:12.5px;font-weight:600;cursor:pointer}
   .trbtn:hover{background:#e2ecf7} .trbtn:disabled{opacity:.6;cursor:default}
+  .trbtn.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .tr-label{font-size:14px;color:var(--muted);margin-right:2px}
   .tr-err{font-size:12px;color:#9a3412}
   /* entry gate */
   .gate{position:fixed;inset:0;z-index:100;background:linear-gradient(160deg,#0b5fa5,#0a4a82);
@@ -306,29 +308,34 @@ function bubble(cls, inner){
   return d;
 }
 
-// per-answer Hebrew translation (fetched once, then cached + toggled)
+// per-answer translation (English / Hebrew / Russian), fetched once then cached + toggled
 let ansSeq = 0; const ansStore = {};
-async function toggleHe(id){
+const TR_LANGS = { he: { label: 'עברית', rtl: true }, ru: { label: 'Русский', rtl: false } };
+async function setLang(id, lang){
   const st = ansStore[id]; if(!st) return;
-  const el = document.getElementById('ans-'+id), btn = document.getElementById('trbtn-'+id), err = document.getElementById('trerr-'+id);
-  if(!el || !btn) return;
+  const el = document.getElementById('ans-'+id), tools = document.getElementById('tools-'+id), err = document.getElementById('trerr-'+id);
+  if(!el || !tools) return;
   if(err) err.textContent='';
-  if(st.showing==='en'){
-    if(!st.he){
-      const old = btn.textContent; btn.disabled=true; btn.textContent='מתרגם…';
+  let text = st.en, rtl = false;
+  if(lang !== 'en'){
+    if(!st.tr[lang]){
+      const btn = tools.querySelector(`[data-l="${lang}"]`); const old = btn ? btn.textContent : '';
+      if(btn){ btn.disabled = true; btn.textContent = '…'; }
       try{
-        const r = await fetch('/translate',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({text:st.en})});
+        const r = await fetch('/translate',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({text:st.en, lang})});
         const data = await r.json().catch(()=>({}));
-        if(r.status===401 && data.gate){ openGate(); btn.disabled=false; btn.textContent=old; return; }
-        if(!r.ok || !data.he){ if(err) err.textContent = data.error || 'Could not translate.'; btn.disabled=false; btn.textContent=old; return; }
-        st.he = data.he;
-      }catch(e){ if(err) err.textContent='Could not translate right now.'; btn.disabled=false; btn.textContent=old; return; }
-      btn.disabled=false;
+        if(r.status===401 && data.gate){ openGate(); if(btn){btn.disabled=false;btn.textContent=old;} return; }
+        if(!r.ok || !data.text){ if(err) err.textContent = data.error || 'Could not translate.'; if(btn){btn.disabled=false;btn.textContent=old;} return; }
+        st.tr[lang] = data.text;
+      }catch(e){ if(err) err.textContent='Could not translate right now.'; if(btn){btn.disabled=false;btn.textContent=old;} return; }
+      if(btn){ btn.disabled=false; btn.textContent=old; }
     }
-    el.innerHTML = md(st.he); el.setAttribute('dir','rtl'); st.showing='he'; btn.textContent='🌐 Show English';
-  } else {
-    el.innerHTML = md(st.en); el.removeAttribute('dir'); st.showing='en'; btn.textContent='🌐 תרגם לעברית';
+    text = st.tr[lang]; rtl = !!(TR_LANGS[lang] && TR_LANGS[lang].rtl);
   }
+  el.innerHTML = md(text);
+  if(rtl) el.setAttribute('dir','rtl'); else el.removeAttribute('dir');
+  st.showing = lang;
+  tools.querySelectorAll('.trbtn').forEach(b => b.classList.toggle('active', b.dataset.l === lang));
 }
 function renderAnswer(data){
   if(!data.covered){
@@ -340,11 +347,15 @@ function renderAnswer(data){
   let body, tools='';
   if(data.llm_answer){
     const id = ++ansSeq;
-    ansStore[id] = { en: data.llm_answer, he: null, showing: 'en' };
+    ansStore[id] = { en: data.llm_answer, tr: {}, showing: 'en' };
     const rtl = heMost(data.llm_answer);
     body = `<div class="answer-b" id="ans-${id}"${rtl?' dir="rtl"':''}>${md(data.llm_answer)}</div>`;
-    if(!rtl){ // answer is mostly English → offer an on-demand Hebrew translation
-      tools = `<div class="ans-tools"><button class="trbtn" id="trbtn-${id}" onclick="toggleHe(${id})">🌐 תרגם לעברית</button><span class="tr-err" id="trerr-${id}"></span></div>`;
+    if(!rtl){ // answer is mostly English → offer on-demand Hebrew / Russian translation
+      tools = `<div class="ans-tools" id="tools-${id}"><span class="tr-label">🌐</span>`
+        + `<button class="trbtn active" data-l="en" onclick="setLang(${id},'en')">English</button>`
+        + `<button class="trbtn" data-l="he" onclick="setLang(${id},'he')">עברית</button>`
+        + `<button class="trbtn" data-l="ru" onclick="setLang(${id},'ru')">Русский</button>`
+        + `<span class="tr-err" id="trerr-${id}"></span></div>`;
     }
   } else {
     body = data.cards.map(card).join('');

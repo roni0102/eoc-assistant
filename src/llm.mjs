@@ -109,21 +109,25 @@ export async function answerWithLLM({ query, cards, standard, history }) {
   return { text, model: MODEL };
 }
 
+// Supported translation targets (code -> language name used in the prompt).
+export const LANG_NAMES = { he: 'Hebrew', ru: 'Russian' };
+
 /**
- * translateToHebrew(text): translate an already-generated (already anonymity-guarded)
- * English answer into natural professional Hebrew, preserving clause numbers, standard
- * references and markdown. Re-checked against the anonymity guard (fail-closed).
+ * translate(text, lang): translate an already-generated (already anonymity-guarded)
+ * English answer into natural professional `lang` (he/ru), preserving clause numbers,
+ * standard references and markdown. Re-checked against the anonymity guard (fail-closed).
  */
-export async function translateToHebrew(text) {
+export async function translate(text, lang = 'he') {
+  const name = LANG_NAMES[lang] || 'Hebrew';
   const res = await getClient().messages.create({
     model: TRANSLATE_MODEL,
     max_tokens: 2000,
     system:
-      'Translate the user\'s message into natural, professional Hebrew. Rules: keep ALL clause ' +
+      `Translate the user's message into natural, professional ${name}. Rules: keep ALL clause ` +
       'numbers and standard references EXACTLY as written (e.g. SI 6464, §7.2.1.5, EN 746-2, ISO, ' +
       'IEC, NFPA); keep technical/engineering terms accurate (boiler, furnace, water heater, ' +
       'corrosion allowance, etc.); preserve the markdown formatting exactly (**bold**, bullet ' +
-      'lists, line breaks); translate the closing disclaimer line too. Output ONLY the Hebrew ' +
+      `lists, line breaks); translate the closing disclaimer line too. Output ONLY the ${name} ` +
       'translation — no preamble, no explanation.',
     messages: [{ role: 'user', content: String(text).slice(0, 8000) }],
   });
