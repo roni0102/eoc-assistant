@@ -151,6 +151,9 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
       } catch (e) {
         if (e.code === 'ANON_BLOCK') console.error('[ask] LLM answer BLOCKED by anonymity guard');
         else console.error('[ask] LLM error:', e.message);
+        // TEMP DIAGNOSTIC (no raw text): why did the LLM answer not show?
+        answer._llmfail = e.code || e.name || 'error';
+        answer._llmwhy = e.code === 'ANON_BLOCK' ? e.hitTypes : String(e.message || '').slice(0, 140);
         // fall back to the deterministic card (answer already has it)
       }
     }
