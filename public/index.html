@@ -240,6 +240,9 @@ EX.forEach((e) => { const c = document.createElement('span'); c.className='chip'
   c.onclick=()=>{ $('#q').value=e; ask(); }; chips.appendChild(c); });
 
 const isHe = (s) => /[֐-׿]/.test(s || '');
+// Dominant-language check: true only when Hebrew letters OUTNUMBER Latin letters.
+// (An English answer that cites a Hebrew standard term shouldn't flip to RTL.)
+const heMost = (s) => { const t = String(s || ''); return (t.match(/[֐-׿]/g) || []).length > (t.match(/[A-Za-z]/g) || []).length; };
 const esc = (s) => (s||'').replace(/[&<>]/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function rtlAttr(s){ return isHe(s) ? ' class="body rtl"' : ' class="body"'; }
 
@@ -338,9 +341,9 @@ function renderAnswer(data){
   if(data.llm_answer){
     const id = ++ansSeq;
     ansStore[id] = { en: data.llm_answer, he: null, showing: 'en' };
-    const rtl = isHe(data.llm_answer);
+    const rtl = heMost(data.llm_answer);
     body = `<div class="answer-b" id="ans-${id}"${rtl?' dir="rtl"':''}>${md(data.llm_answer)}</div>`;
-    if(!rtl){ // answer is in English → offer an on-demand Hebrew translation
+    if(!rtl){ // answer is mostly English → offer an on-demand Hebrew translation
       tools = `<div class="ans-tools"><button class="trbtn" id="trbtn-${id}" onclick="toggleHe(${id})">🌐 תרגם לעברית</button><span class="tr-err" id="trerr-${id}"></span></div>`;
     }
   } else {
