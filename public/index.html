@@ -366,10 +366,15 @@ function renderAnswer(data){
   return `<div class=" meta-sm">${ground}</div>${body}${tools}${data.llm_answer?sources:''}`;
 }
 
-let busy = false;
+let busy = false; let lastQ = ''; let lastQt = 0;
 async function ask(){
   if(busy) return;
   const q = $('#q').value.trim(); if(!q) return;
+  // guard against an accidental duplicate submit (Enter + click together, or a
+  // keyboard/IME sending Enter twice): ignore the same question within 1.5s.
+  const now = Date.now();
+  if(q === lastQ && now - lastQt < 1500) return;
+  lastQ = q; lastQt = now;
   $('#q').value=''; chips.style.display='none';
   busy=true; const btn=$('#go'); btn.disabled=true; btn.textContent='…';
   bubble('user', `<div class="answer-b"${isHe(q)?' dir="rtl"':''}>${esc(q)}</div>`);
@@ -391,7 +396,7 @@ async function ask(){
   finally{ busy=false; btn.disabled=false; btn.textContent='Ask'; $('#q').focus(); }
 }
 $('#go').onclick = ask;
-$('#q').addEventListener('keydown', (e)=>{ if(e.key==='Enter') ask(); });
+$('#q').addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.isComposing){ e.preventDefault(); ask(); } });
 
 // ---- shared Q&A (questions other clients have asked) ----
 let sharedLoaded=false;
