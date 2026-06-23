@@ -154,6 +154,7 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
         // TEMP DIAGNOSTIC (no raw text): why did the LLM answer not show?
         answer._llmfail = e.code || e.name || 'error';
         answer._llmwhy = e.code === 'ANON_BLOCK' ? e.hitTypes : String(e.message || '').slice(0, 140);
+        answer._llmsamples = e.matchedSamples; // TEMP diag only
         // fall back to the deterministic card (answer already has it)
       }
     }
