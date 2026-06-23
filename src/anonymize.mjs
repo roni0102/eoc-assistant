@@ -90,7 +90,10 @@ function literalsRe(list) {
     .slice()
     .sort((a, b) => b.length - a.length) // longest first so "BTA-ESP-PFD-001" wins over "BTA"
     .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return new RegExp('(' + escaped.join('|') + ')', 'gi');
+  // Word-boundary the alternation so a short code like "BTA" matches only as a standalone
+  // token — NOT the letters "bta" inside "obtain". Boundaries exclude any letter/number in
+  // ANY script (\p{L}\p{N}) so it works for both Latin and Hebrew entries.
+  return new RegExp('(?<![\\p{L}\\p{N}])(' + escaped.join('|') + ')(?![\\p{L}\\p{N}])', 'giu');
 }
 
 const NAME_RE = literalsRe([...CLIENT_NAMES, ...PERSON_NAMES, ...DOC_IDS]);

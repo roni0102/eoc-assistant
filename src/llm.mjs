@@ -104,8 +104,6 @@ export async function answerWithLLM({ query, cards, standard, history }) {
   if (hits.length) {
     const e = new Error(`LLM answer blocked by anonymity guard: ${hits.map((h) => h.match).join(', ')}`);
     e.code = 'ANON_BLOCK';
-    e.hitTypes = hits.map((h) => `${h.type}:${h.match.length}`); // safe (no raw text) — for diagnosis
-    e.matchedSamples = hits.map((h) => h.match); // TEMP diag only — reverted right after
     throw e;
   }
   return { text, model: MODEL };
