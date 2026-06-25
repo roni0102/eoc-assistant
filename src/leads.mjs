@@ -28,6 +28,18 @@ export const validCompany = (s) => norm(s).length >= 2;
 // the client handles a 401 by re-showing the gate.)
 const sessions = new Map();
 
+// Free-plan question cap per session (to control token spend). Override with FREE_QUERY_LIMIT.
+const FREE_LIMIT = Number(process.env.FREE_QUERY_LIMIT || 10);
+const usage = new Map(); // token -> questions used this session
+export const freeLimit = () => FREE_LIMIT;
+/** Consume one free question. Returns {ok, used, remaining, limit}; ok:false when over cap. */
+export function useQuery(token) {
+  const used = usage.get(token) || 0;
+  if (used >= FREE_LIMIT) return { ok: false, used, remaining: 0, limit: FREE_LIMIT };
+  usage.set(token, used + 1);
+  return { ok: true, used: used + 1, remaining: FREE_LIMIT - (used + 1), limit: FREE_LIMIT };
+}
+
 // Optional Google Sheets mirror: every new lead is POSTed to a Google Apps Script web
 // app (its URL in SHEETS_WEBHOOK_URL) which appends a row to a sheet on the user's Drive.
 // Fire-and-forget — a slow or failing webhook must never block or break sign-up, and if
@@ -97,6 +109,35 @@ export function toCSV(leads) {
   const lines = [head.join(',')];
   for (const l of leads) lines.push([l.ts, l.company, l.email, l.phone, l.tier].map(esc).join(','));
   return lines.join('\n');
+}
+
+/** Look up the lead behind a session token (for expert requests). */
+function leadForToken(token) {
+  const id = sessions.get(token);
+  if (!id) return null;
+  return allLeads().find((l) => l.id === id) || null;
+}
+
+/**
+ * addExpertRequest({ token, message }): record a request to talk to a real ITL expert,
+ * tied to the visitor's existing lead. Appended to leads.jsonl and mirrored to the sheet
+ * (marked EXPERT REQUEST, with the message) so the team can follow up.
+ */
+export function addExpertRequest({ token, message }) {
+  const lead = leadForToken(token);
+  const msg = String(message || '').slice(0, 2000).trim();
+  if (!msg) return { ok: false, error: 'Please describe what you need help with.' };
+  const entry = {
+    id: lead?.id, ts: new Date().toISOString(), expert_request: msg,
+    company: lead?.company || '', email: lead?.email || '', phone: lead?.phone || '',
+  };
+  try {
+    fs.mkdirSync(path.dirname(LEADS_PATH), { recursive: true });
+    fs.appendFileSync(LEADS_PATH, JSON.stringify(entry) + '\n');
+  } catch (e) { return { ok: false, error: 'Could not record your request — please try again.' }; }
+  // Mirror to the Google Sheet so the team sees the consult request with the contact.
+  sendToSheet({ ts: entry.ts, company: entry.company, email: entry.email, phone: entry.phone, tier: 'EXPERT REQUEST: ' + msg.slice(0, 400) });
+  return { ok: true };
 }
 
 export function stats() { return { leads: allLeads().length }; }

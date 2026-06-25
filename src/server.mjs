@@ -124,10 +124,28 @@ app.post('/translate', rateLimit, requireGate, async (req, res) => {
   }
 });
 
+// Request a consultation with a real ITL expert (captured + mirrored to the leads sheet).
+app.post('/expert', rateLimit, requireGate, (req, res) => {
+  const message = String(req.body?.message ?? '').slice(0, 2000).trim();
+  if (!message) return res.status(400).json({ error: 'Please describe what you need help with.' });
+  const r = leads.addExpertRequest({ token: req.sessionToken, message });
+  if (!r.ok) return res.status(500).json({ error: r.error || 'Could not send your request.' });
+  console.log('[expert] consultation request captured');
+  res.json({ ok: true });
+});
+
 app.post('/ask', rateLimit, requireGate, async (req, res) => {
   const t0 = Date.now();
   const q = String(req.body?.q ?? '').slice(0, 2000).trim();
   if (!q) return res.status(400).json({ error: 'Empty query.' });
+  // Free-plan cap: each session gets a limited number of questions (token-spend control).
+  const quota = leads.useQuery(req.sessionToken);
+  if (!quota.ok) {
+    return res.status(429).json({
+      limit: true,
+      message: `You've reached the free limit of ${quota.limit} questions. For more, talk to a real ITL expert.`,
+    });
+  }
   // prior conversation turns sent by the browser (stateless backend)
   const history = Array.isArray(req.body?.history) ? req.body.history : [];
   // Keep follow-ups on-topic: blend the previous question into the retrieval query so a
@@ -164,6 +182,7 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
         tier: 'free',
       });
     }
+    answer.free_remaining = quota.remaining; // let the UI show questions left
     res.json(answer);
   } catch (err) {
     if (err.code === 'ANON_BLOCK') {

@@ -125,6 +125,22 @@
   .tab.premium::before{content:"\2605\00a0";color:#7a5a00}
   .tab.premium:hover{filter:brightness(1.05)}
   .tab.premium.active{box-shadow:0 0 0 3px rgba(214,158,20,.4),0 3px 12px rgba(214,158,20,.45)}
+  /* expert tab — green "talk to a human" option */
+  .tab.expert{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  .tab.expert::before{content:"\1F4AC\00a0"}
+  .tab.expert:hover{filter:brightness(1.05)}
+  .tab.expert.active{box-shadow:0 0 0 3px rgba(22,135,85,.35)}
+  /* expert view */
+  .expert-form{display:flex;flex-direction:column;gap:10px;max-width:640px}
+  .expert-form textarea{border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:15px;
+    font-family:inherit;resize:vertical;min-height:120px}
+  .expert-form textarea:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px rgba(11,95,165,.12)}
+  .expert-note{font-size:13.5px;margin-top:2px}
+  .expert-note.ok{color:var(--accent);font-weight:600} .expert-note.err{color:#9a3412}
+  /* free-limit note + remaining counter */
+  .limit-msg{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:10px;padding:12px 14px}
+  .remaining{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .remaining b{color:var(--brand-dark)}
   @media(max-width:560px){.topnav-in{flex-direction:column;gap:8px}.tab{padding:7px 12px;font-size:13px}}
   /* premium */
   .prem-intro{font-size:14px;color:var(--ink);background:#f0f6fc;border:1px solid #d6e6f5;
@@ -189,6 +205,7 @@
     <div class="tabs">
       <button class="tab active" id="tabFree">Ask — free</button>
       <button class="tab premium" id="tabPrem">Full EOC review — Premium</button>
+      <button class="tab expert" id="tabExpert">Talk to an expert</button>
     </div>
   </div>
 </div>
@@ -224,6 +241,15 @@
       <button class="go" id="reviewBtn">Review my EOC</button>
     </div>
     <div id="reviewOut"></div>
+  </div>
+
+  <div id="expertView" hidden>
+    <div class="prem-intro">Need a definitive answer for your specific project? An <b>ITL specialist</b> can review your case directly and advise on your EOC. Describe what you need below and we'll get back to you using the contact details you provided.</div>
+    <div class="expert-form">
+      <textarea id="expertMsg" placeholder="Describe your question or what you'd like reviewed — the clause, the appliance, and the issue you're facing…"></textarea>
+      <button class="go" id="expertBtn">Request a consultation</button>
+      <div id="expertNote" class="expert-note"></div>
+    </div>
   </div>
 </div>
 
@@ -384,9 +410,23 @@ async function ask(){
       body: JSON.stringify({q, history: convo})});
     const data = await res.json();
     if(res.status===401 && data.gate){ openGate(); pending.remove(); return; }
+    if(res.status===429 && data.limit){
+      pending.classList.remove('pending');
+      pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b limit-msg">${esc(data.message)}<br><br><button class="go goExpert">💬 Talk to a real expert →</button></div>`;
+      pending.querySelector('.goExpert').onclick=()=>showTab('expert');
+      pending.scrollIntoView({behavior:'smooth', block:'start'});
+      return;
+    }
     if(!res.ok){ pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b notfound">${esc(data.error||'Error')}</div>`; return; }
     pending.classList.remove('pending');
     pending.innerHTML = `<div class="answer-h">Assistant</div>${renderAnswer(data)}`;
+    // show "questions left" when running low
+    if(typeof data.free_remaining==='number' && data.free_remaining<=3 && data.free_remaining>0){
+      const note=document.createElement('div'); note.className='remaining';
+      note.innerHTML=`<b>${data.free_remaining}</b> free question${data.free_remaining>1?'s':''} left. Need more? <a href="#">Talk to a real expert</a>.`;
+      note.querySelector('a').onclick=(e)=>{e.preventDefault(); showTab('expert');};
+      pending.appendChild(note);
+    }
     pending.scrollIntoView({behavior:'smooth', block:'start'});
     // record the turn so follow-ups have context
     const answerText = data.llm_answer || (data.covered ? `(${data.cards.length} matching clauses shown)` : data.message);
@@ -443,13 +483,32 @@ $('#gateForm').addEventListener('submit',(e)=>{ e.preventDefault(); submitGate()
 $('#gateBtn').addEventListener('click',(e)=>{ e.preventDefault(); submitGate(); });
 
 // ---- tabs ----
-function showTab(prem){
-  $('#tabFree').classList.toggle('active', !prem);
-  $('#tabPrem').classList.toggle('active', prem);
-  $('#freeView').hidden = prem; $('#premiumView').hidden = !prem;
+function showTab(which){
+  $('#tabFree').classList.toggle('active', which==='free');
+  $('#tabPrem').classList.toggle('active', which==='premium');
+  $('#tabExpert').classList.toggle('active', which==='expert');
+  $('#freeView').hidden = which!=='free';
+  $('#premiumView').hidden = which!=='premium';
+  $('#expertView').hidden = which!=='expert';
 }
-$('#tabFree').onclick=()=>showTab(false);
-$('#tabPrem').onclick=()=>showTab(true);
+$('#tabFree').onclick=()=>showTab('free');
+$('#tabPrem').onclick=()=>showTab('premium');
+$('#tabExpert').onclick=()=>showTab('expert');
+
+// ---- talk to an expert ----
+$('#expertBtn').onclick=async ()=>{
+  const msg=$('#expertMsg').value.trim(); const note=$('#expertNote');
+  if(!msg){ note.textContent='Please describe what you need help with.'; note.className='expert-note err'; return; }
+  const btn=$('#expertBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='Sending…'; note.textContent='';
+  try{
+    const r=await fetch('/expert',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({message:msg})});
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401 && d.gate){ openGate(); return; }
+    if(!r.ok){ note.textContent=d.error||'Could not send — please try again.'; note.className='expert-note err'; return; }
+    $('#expertMsg').value=''; note.textContent='✓ Request sent. An ITL expert will contact you using the details you provided.'; note.className='expert-note ok';
+  }catch(e){ note.textContent='Network error — please try again.'; note.className='expert-note err'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+};
 
 // ---- premium: full EOC review ----
 const fileInput=$('#eocFile'), fileLabel=$('#fileLabel'), filebox=$('#filebox');
