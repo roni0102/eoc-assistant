@@ -18,6 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // survive redeploys. Defaults to the repo's data/ for local dev.
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '..', 'data');
 const LEADS_PATH = path.join(DATA_DIR, 'leads.jsonl');
+const USAGE_PATH = path.join(DATA_DIR, 'usage.json'); // per-email question counts (durable cap)
 
 const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 export const validEmail = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(norm(s));
@@ -28,15 +29,30 @@ export const validCompany = (s) => norm(s).length >= 2;
 // the client handles a 401 by re-showing the gate.)
 const sessions = new Map();
 
-// Free-plan question cap per session (to control token spend). Override with FREE_QUERY_LIMIT.
+// Free-plan question cap (to control token spend). Override with FREE_QUERY_LIMIT.
+// Airtight: keyed by EMAIL (not the session token) and persisted to disk, so re-submitting
+// the gate with the same email does NOT reset the quota, and it survives instance restarts.
+// (On the free Render plan, data/ is wiped by a code redeploy; attach a persistent disk +
+// DATA_DIR to make it permanent across redeploys too.)
 const FREE_LIMIT = Number(process.env.FREE_QUERY_LIMIT || 10);
-const usage = new Map(); // token -> questions used this session
+const tokenEmail = new Map(); // token -> email (so a query can find its lead's email)
+const usageByEmail = (() => {
+  try { return new Map(Object.entries(JSON.parse(fs.readFileSync(USAGE_PATH, 'utf8')))); }
+  catch { return new Map(); }
+})();
+function persistUsage() {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(USAGE_PATH, JSON.stringify(Object.fromEntries(usageByEmail))); } catch {}
+}
+const emailKey = (token) => String(tokenEmail.get(token) || token).toLowerCase();
+
 export const freeLimit = () => FREE_LIMIT;
-/** Consume one free question. Returns {ok, used, remaining, limit}; ok:false when over cap. */
+/** Consume one free question (per email). Returns {ok, used, remaining, limit}; ok:false when over cap. */
 export function useQuery(token) {
-  const used = usage.get(token) || 0;
+  const key = emailKey(token);
+  const used = usageByEmail.get(key) || 0;
   if (used >= FREE_LIMIT) return { ok: false, used, remaining: 0, limit: FREE_LIMIT };
-  usage.set(token, used + 1);
+  usageByEmail.set(key, used + 1);
+  persistUsage();
   return { ok: true, used: used + 1, remaining: FREE_LIMIT - (used + 1), limit: FREE_LIMIT };
 }
 
@@ -73,6 +89,7 @@ export function addLead({ email, phone, company }) {
   sendToSheet(lead); // mirror to Google Sheets (no-op unless SHEETS_WEBHOOK_URL is set)
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, lead.id);
+  tokenEmail.set(token, email.toLowerCase()); // bind token→email for the per-email quota
   return { ok: true, token };
 }
 
