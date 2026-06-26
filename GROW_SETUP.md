@@ -9,8 +9,12 @@ billing turns ON automatically.
 | Product | Type | Unlocks |
 |---|---|---|
 | **EOC review** | one-time | one full ITL-style review of an uploaded EOC |
-| **Expert consultation** | one-time | sending one request to a real ITL expert |
+| **Expert consultation** | one-time | booking one 30-minute online meeting with an ITL expert |
+| **Question pack** | one-time | +N more questions (per-question payment option; N = `GROW_QUESTIONS_PER_PACK`) |
 | **Monthly pass** | one-time, 31 days | unlimited questions (bypasses the 10-cap) |
+
+When a visitor hits the free question limit they're offered **both** options: buy a question pack
+(per-use) or subscribe (unlimited).
 
 Each purchase is tied to the buyer's **email** (already captured at the gate). Payment methods
 (credit card, Bit, Apple/Google Pay, PayPal) are whatever you enable in your Grow dashboard.
@@ -23,6 +27,7 @@ Each purchase is tied to the buyer's **email** (already captured at the gate). P
    - `GROW_PAGE_CODE` = your payment page code
    - `GROW_API_BASE` = `https://sandbox.meshulam.co.il/api/light/server/1.0` (sandbox while testing)
    - `GROW_PRICE_REVIEW` = e.g. `250`  · `GROW_PRICE_CONSULT` = e.g. `400`  · `GROW_PRICE_SUB` = e.g. `99` (ILS)
+   - `GROW_PRICE_QUESTIONS` = e.g. `29`  · `GROW_QUESTIONS_PER_PACK` = e.g. `20` (per-question pack)
    - `BASE_URL` = `https://eoc-assistant.onrender.com` (your live URL)
 3. In Grow, set the **server callback (cgUrl)** to `https://<your-site>/pay/callback` (the site also
    sends it automatically per payment).

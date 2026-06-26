@@ -48,13 +48,14 @@ const emailKey = (token) => String(tokenEmail.get(token) || token).toLowerCase()
 
 export const freeLimit = () => FREE_LIMIT;
 /** Consume one free question (per email). Returns {ok, used, remaining, limit}; ok:false when over cap. */
-export function useQuery(token) {
+export function useQuery(token, extra = 0) {
   const key = emailKey(token);
+  const allowance = FREE_LIMIT + (Number(extra) || 0); // purchased question packs raise the cap
   const used = usageByEmail.get(key) || 0;
-  if (used >= FREE_LIMIT) return { ok: false, used, remaining: 0, limit: FREE_LIMIT };
+  if (used >= allowance) return { ok: false, used, remaining: 0, limit: FREE_LIMIT, allowance };
   usageByEmail.set(key, used + 1);
   persistUsage();
-  return { ok: true, used: used + 1, remaining: FREE_LIMIT - (used + 1), limit: FREE_LIMIT };
+  return { ok: true, used: used + 1, remaining: allowance - (used + 1), limit: FREE_LIMIT, allowance };
 }
 
 // Load persisted sessions on startup → tokens survive restarts.

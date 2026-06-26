@@ -210,7 +210,7 @@
       <div id="gateErr" class="gate-err" hidden></div>
       <button type="submit" class="go" id="gateBtn">Enter</button>
     </form>
-    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 10 questions per user.</div>
+    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 10 questions per user; beyond that, a per-question payment or a monthly subscription is required.</div>
   </div>
 </div>
 
@@ -238,7 +238,7 @@
     <div class="hint">Ask a question, then keep the conversation going with follow-ups. Answers are generic and anonymous.</div>
     <div class="disclaimer">
       <b>Reference guidance only.</b> Past accepted replies <b>do not guarantee</b> the same response from the Inspection Body (IB) or ITL — every submission is assessed on its own merits.
-      The <b>free plan includes <span id="freeLimitN">10</span> questions</b> per user; for more, book a consultation with an ITL expert.
+      The <b>free plan includes <span id="freeLimitN">10</span> questions</b> per user; beyond that, a per-question payment or a monthly subscription is required.
       Your questions and interactions are stored and used <b>anonymously</b> to improve this assistant, and may be shown <b>anonymously</b> to other clients — never revealing you, your company, site, or project.
     </div>
     <div class="chips" id="chips"></div>
@@ -441,8 +441,10 @@ async function ask(){
     if(res.status===401 && data.gate){ pending.remove(); userBubble.remove(); $('#q').value=q; lastQ=''; openGate(); return; }
     if(res.status===429 && data.limit){
       pending.classList.remove('pending');
+      const packN=(ME.pricing&&ME.pricing.questionsPack)||'';
+      const buyQ = data.canBuyQuestions ? `${payBtn('questions',`＋ Buy ${packN?packN+' ':''}more questions`)} ` : '';
       const sub = data.canSubscribe ? `${payBtn('subscription','⭐ Subscribe — unlimited')} ` : '';
-      pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b limit-msg">${esc(data.message)}<br><br>${sub}<button class="go goExpert">💬 Talk to a real expert →</button></div>`;
+      pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b limit-msg">${esc(data.message)}<br><br>${buyQ}${sub}<button class="go goExpert">💬 Talk to a real expert →</button></div>`;
       pending.querySelector('.goExpert').onclick=()=>showTab('expert');
       pending.scrollIntoView({behavior:'smooth', block:'start'});
       return;

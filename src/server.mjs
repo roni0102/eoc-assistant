@@ -140,7 +140,7 @@ app.get('/me', requireGate, (req, res) => {
 // Start a payment: returns a hosted-checkout URL the browser redirects to.
 app.post('/checkout', rateLimit, requireGate, async (req, res) => {
   const kind = String(req.body?.kind || '').trim();
-  if (!['review', 'consult', 'subscription'].includes(kind)) return res.status(400).json({ error: 'Unknown product.' });
+  if (!['review', 'consult', 'subscription', 'questions'].includes(kind)) return res.status(400).json({ error: 'Unknown product.' });
   const email = leads.emailForToken(req.sessionToken);
   const origin = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   try {
@@ -190,12 +190,14 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
   const subscribed = billing.hasSub(askEmail);
   let quota = null;
   if (!subscribed) {
-    quota = leads.useQuery(req.sessionToken);
+    quota = leads.useQuery(req.sessionToken, billing.extraQuestions(askEmail));
     if (!quota.ok) {
+      const on = billing.billingAvailable();
       return res.status(429).json({
         limit: true,
-        canSubscribe: billing.billingAvailable(),
-        message: `You've reached the free limit of ${quota.limit} questions.${billing.billingAvailable() ? ' Subscribe for unlimited, or talk to a real ITL expert.' : ' For more, talk to a real ITL expert.'}`,
+        canSubscribe: on,
+        canBuyQuestions: on,
+        message: `You've used all ${quota.allowance} of your questions.${on ? ' Buy more questions, subscribe for unlimited, or talk to a real ITL expert.' : ' For more, talk to a real ITL expert.'}`,
       });
     }
   }

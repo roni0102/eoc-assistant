@@ -29,17 +29,20 @@ const GROW = {
 export const billingAvailable = () => !!(GROW.userId && GROW.pageCode);
 
 // Prices (ILS) + human descriptions per product.
+const QUESTIONS_PER_PACK = Number(process.env.GROW_QUESTIONS_PER_PACK || 20);
 const PRICE = {
   review: Number(process.env.GROW_PRICE_REVIEW || 0),
   consult: Number(process.env.GROW_PRICE_CONSULT || 0),
   subscription: Number(process.env.GROW_PRICE_SUB || 0),
+  questions: Number(process.env.GROW_PRICE_QUESTIONS || 0), // price for one pack of N questions
 };
 const DESC = {
   review: 'EOC full review (one EOC)',
-  consult: 'Consultation with an ITL expert',
+  consult: '30-minute consultation with an ITL expert',
   subscription: 'EOC Assistant — monthly unlimited questions',
+  questions: `EOC Assistant — ${QUESTIONS_PER_PACK} more questions`,
 };
-export const pricing = () => ({ ...PRICE, currency: 'ILS', enabled: billingAvailable() });
+export const pricing = () => ({ ...PRICE, questionsPack: QUESTIONS_PER_PACK, currency: 'ILS', enabled: billingAvailable() });
 const MONTH_MS = 31 * 24 * 3600 * 1000;
 
 // ---- Entitlements store (per email) — provider-agnostic, persisted to disk ---------------
@@ -60,8 +63,9 @@ function rec(email) {
 
 export function entitlements(email) {
   const r = rec(email);
-  return { reviews: r.reviews || 0, consults: r.consults || 0, subActive: (r.subUntil || 0) > Date.now() };
+  return { reviews: r.reviews || 0, consults: r.consults || 0, questionCredits: r.questionCredits || 0, subActive: (r.subUntil || 0) > Date.now() };
 }
+export const extraQuestions = (email) => rec(email).questionCredits || 0; // purchased question packs raise the cap
 export const hasSub = (email) => (rec(email).subUntil || 0) > Date.now();
 export function useReview(email) { const r = rec(email); if ((r.reviews || 0) <= 0) return false; r.reviews--; persist(); return true; }
 export function useConsult(email) { const r = rec(email); if ((r.consults || 0) <= 0) return false; r.consults--; persist(); return true; }
@@ -70,6 +74,7 @@ export function grant(email, kind) {
   if (kind === 'review') r.reviews = (r.reviews || 0) + 1;
   else if (kind === 'consult') r.consults = (r.consults || 0) + 1;
   else if (kind === 'subscription') r.subUntil = Date.now() + MONTH_MS;
+  else if (kind === 'questions') r.questionCredits = (r.questionCredits || 0) + QUESTIONS_PER_PACK;
   else return false;
   persist();
   return true;
