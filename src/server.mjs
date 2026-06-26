@@ -134,7 +134,7 @@ app.post('/translate', rateLimit, requireGate, async (req, res) => {
 // Account/entitlement status for the current visitor (drives the UI's pay buttons).
 app.get('/me', requireGate, (req, res) => {
   const email = leads.emailForToken(req.sessionToken);
-  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: billing.entitlements(email) });
+  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: billing.entitlements(email), freeLimit: leads.freeLimit() });
 });
 
 // Start a payment: returns a hosted-checkout URL the browser redirects to.

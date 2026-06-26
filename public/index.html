@@ -210,7 +210,7 @@
       <div id="gateErr" class="gate-err" hidden></div>
       <button type="submit" class="go" id="gateBtn">Enter</button>
     </form>
-    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL.</div>
+    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 10 questions per user.</div>
   </div>
 </div>
 
@@ -238,6 +238,7 @@
     <div class="hint">Ask a question, then keep the conversation going with follow-ups. Answers are generic and anonymous.</div>
     <div class="disclaimer">
       <b>Reference guidance only.</b> Past accepted replies <b>do not guarantee</b> the same response from the Inspection Body (IB) or ITL — every submission is assessed on its own merits.
+      The <b>free plan includes <span id="freeLimitN">10</span> questions</b> per user; for more, book a consultation with an ITL expert.
       Your questions and interactions are stored and used <b>anonymously</b> to improve this assistant, and may be shown <b>anonymously</b> to other clients — never revealing you, your company, site, or project.
     </div>
     <div class="chips" id="chips"></div>
@@ -534,7 +535,7 @@ $('#tabExpert').onclick=()=>showTab('expert');
 
 // ---- billing (Grow) helpers ----
 let ME = { billing:false, pricing:{}, entitlements:{} };
-async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok) ME=await r.json(); }catch{} }
+async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok){ ME=await r.json(); const fl=$('#freeLimitN'); if(fl && ME.freeLimit) fl.textContent=ME.freeLimit; } }catch{} }
 function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kind]}` : ''; }
 function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
 async function goCheckout(kind){
