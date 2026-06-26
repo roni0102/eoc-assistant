@@ -199,7 +199,7 @@ line-by-line audit. It is the bundled **eoc-fill** skill running server-side:
 never added to the knowledge base. The report is for that client about their own file, so
 their own document names appear (not scrubbed); the grounding it's checked against is
 anonymized, so no past client is exposed. **Gate:** `premiumOk()` checks
-`PREMIUM_LICENSE_KEYS` (or swap in Stripe/account verification); open in dev mode when unset.
+`PREMIUM_LICENSE_KEYS` (fallback when Grow billing is off); open in dev mode when unset.
 
 ## Not yet built (next milestones)
 
@@ -209,6 +209,6 @@ anonymized, so no past client is exposed. **Gate:** `premiumOk()` checks
 - Semantic clustering (embeddings / LLM) to merge EN/HE paraphrases of the same answer (lexical
   clustering already yields strong frequencies on the standardized IB comments).
 - Fold in the renewal-checklist-format EOCs (the 26 skipped files) and the in-progress works.
-- Wire the real billing/account check into `premiumOk()` (Stripe / license service).
+- Finalize the Grow/Meshulam payment adapter against their live API (see GROW_SETUP.md).
 - Deploy to a public URL (currently runs on localhost).
 - Multimodal upload on the free tier (screenshot / PDF), processed in memory only.

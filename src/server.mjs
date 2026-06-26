@@ -38,8 +38,8 @@ const upload = multer({
   fileFilter: (_req, file, cb) => cb(null, /\.xlsx$/i.test(file.originalname) || /spreadsheet/i.test(file.mimetype)),
 });
 
-// Premium gate. Configure PREMIUM_LICENSE_KEYS=key1,key2 (or wire Stripe here). If unset,
-// premium is OPEN (dev mode) and the response flags it.
+// Premium gate — fallback used only when Grow billing is NOT configured (see billing.mjs).
+// Configure PREMIUM_LICENSE_KEYS=key1,key2 for a manual gate; if unset, premium is OPEN (dev mode).
 const LICENSE_KEYS = (process.env.PREMIUM_LICENSE_KEYS || '').split(',').map((s) => s.trim()).filter(Boolean);
 function premiumOk(req) {
   if (!LICENSE_KEYS.length) return { ok: true, dev: true };
@@ -162,18 +162,22 @@ app.post('/pay/callback', async (req, res) => {
   res.json({ received: true }); // always 200 so the gateway doesn't retry-storm
 });
 
-// Request a consultation with a real ITL expert (captured + mirrored to the leads sheet).
+// Book a 30-minute online consultation with a real ITL expert: topic + short description +
+// 2-3 proposed times. Paid (consult credit) once billing is live; the credit is consumed on
+// SUCCESS, so an invalid form never burns it. Graceful: free until billing is connected.
 app.post('/expert', rateLimit, requireGate, (req, res) => {
-  const message = String(req.body?.message ?? '').slice(0, 2000).trim();
-  if (!message) return res.status(400).json({ error: 'Please describe what you need help with.' });
-  // Paid consultation: requires a consult credit once billing is live (graceful: free until then).
   const email = leads.emailForToken(req.sessionToken);
-  if (billing.billingAvailable() && !billing.useConsult(email)) {
-    return res.status(402).json({ pay: 'consult', error: 'A paid consultation is required to send this request.' });
+  const billed = billing.billingAvailable();
+  if (billed && billing.entitlements(email).consults <= 0) {
+    return res.status(402).json({ pay: 'consult', error: 'A paid 30-minute consultation is required to book a meeting.' });
   }
-  const r = leads.addExpertRequest({ token: req.sessionToken, message });
-  if (!r.ok) return res.status(500).json({ error: r.error || 'Could not send your request.' });
-  console.log('[expert] consultation request captured');
+  const r = leads.addExpertRequest({
+    token: req.sessionToken,
+    topic: req.body?.topic, description: req.body?.description, slots: req.body?.slots,
+  });
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  if (billed) billing.useConsult(email); // consume one consult credit on success
+  console.log('[expert] consultation booking captured');
   res.json({ ok: true });
 });
 
@@ -255,11 +259,13 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
   // failed review never burns it. Until billing is connected, use the license-key gate.
   const revEmail = leads.emailForToken(req.sessionToken);
   const billed = billing.billingAvailable();
+  let devMode = false;
   if (billed) {
     if (billing.entitlements(revEmail).reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A paid EOC review is required.' });
   } else {
     const gate = premiumOk(req);
     if (!gate.ok) return res.status(402).json({ error: 'Premium feature — a valid license key is required.' });
+    devMode = gate.dev;
   }
   if (!req.file) return res.status(400).json({ error: 'No EOC file uploaded (.xlsx).' });
   try {
@@ -273,7 +279,7 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
     if (billed) billing.useReview(revEmail); // consume one paid review credit on success
     leads.markTier(req.sessionToken, 'premium'); // record that this lead used premium
     const reviewedCount = report.items.filter((i) => i.verdict && i.verdict !== 'MISSING').length;
-    console.log(`[review] type=${eoc.type} rows=${eoc.rows.length} answered=${answered} reviewed=${reviewedCount} dev=${gate.dev} ms=${Date.now() - t0}`);
+    console.log(`[review] type=${eoc.type} rows=${eoc.rows.length} answered=${answered} reviewed=${reviewedCount} dev=${devMode} ms=${Date.now() - t0}`);
     res.json({
       type: eoc.type,
       sheet: eoc.sheetName,
@@ -285,7 +291,7 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
       scoreboard: report.scoreboard,
       items: report.items,
       download_token: token,
-      dev_mode: gate.dev,
+      dev_mode: devMode,
       disclaimer: 'Reference guidance only — not a formal ITL determination. Final approval is subject to ITL review of the actual submission. Your uploaded EOC was processed in memory only and was not stored.',
     });
   } catch (err) {

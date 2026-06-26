@@ -161,20 +161,31 @@ function leadForToken(token) {
  * tied to the visitor's existing lead. Appended to leads.jsonl and mirrored to the sheet
  * (marked EXPERT REQUEST, with the message) so the team can follow up.
  */
-export function addExpertRequest({ token, message }) {
+/**
+ * addExpertRequest({ token, topic, description, slots }): a 30-minute online consultation
+ * BOOKING request — the client's topic, short description, and 2-3 proposed date/time options.
+ * Recorded to leads.jsonl and mirrored to the sheet so the team confirms a slot + sends a link.
+ */
+export function addExpertRequest({ token, topic, description, slots }) {
   const lead = leadForToken(token);
-  const msg = String(message || '').slice(0, 2000).trim();
-  if (!msg) return { ok: false, error: 'Please describe what you need help with.' };
+  topic = String(topic || '').slice(0, 200).trim();
+  description = String(description || '').slice(0, 1500).trim();
+  const times = (Array.isArray(slots) ? slots : []).map((s) => String(s || '').slice(0, 40).trim()).filter(Boolean).slice(0, 3);
+  if (!topic) return { ok: false, error: 'Please enter a topic.' };
+  if (!description) return { ok: false, error: 'Please describe what you need.' };
+  if (!times.length) return { ok: false, error: 'Please propose at least one date/time.' };
   const entry = {
-    id: lead?.id, ts: new Date().toISOString(), expert_request: msg,
+    id: lead?.id, ts: new Date().toISOString(),
+    consult: { topic, description, slots: times },
     company: lead?.company || '', email: lead?.email || '', phone: lead?.phone || '',
   };
   try {
     fs.mkdirSync(path.dirname(LEADS_PATH), { recursive: true });
     fs.appendFileSync(LEADS_PATH, JSON.stringify(entry) + '\n');
   } catch (e) { return { ok: false, error: 'Could not record your request — please try again.' }; }
-  // Mirror to the Google Sheet so the team sees the consult request with the contact.
-  sendToSheet({ ts: entry.ts, company: entry.company, email: entry.email, phone: entry.phone, tier: 'EXPERT REQUEST: ' + msg.slice(0, 400) });
+  // Mirror to the Google Sheet so the team sees the booking with contact + proposed times.
+  const human = `CONSULT (30-min) — Topic: ${topic} | Needs: ${description.slice(0, 280)} | Times: ${times.map((t) => t.replace('T', ' ')).join('  /  ')}`;
+  sendToSheet({ ts: entry.ts, company: entry.company, email: entry.email, phone: entry.phone, tier: human.slice(0, 490) });
   return { ok: true };
 }
 
