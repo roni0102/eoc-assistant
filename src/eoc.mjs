@@ -107,10 +107,11 @@ export async function writeEOC(buffer, updates) {
     const v = (u.col_E || '').toUpperCase();
     if (v) {
       const ce = ws.getCell(u.row, E); ce.value = v;
-      ce.alignment = { horizontal: 'center', vertical: 'center' };
-      if (v === 'PASS') { ce.fill = fill('FFC6EFCE'); ce.font = { bold: true, color: { argb: 'FF375623' } }; }
-      else if (v === 'FAILED' || v === 'FAIL') { ce.fill = fill('FFFFC7CE'); ce.font = { bold: true, color: { argb: 'FF9C0006' } }; }
-      else if (v === 'N/A') { ce.fill = fill('FFFFEB9C'); ce.font = { bold: true, color: { argb: 'FF7D6608' } }; }
+      ce.alignment = { horizontal: 'center', vertical: 'center', wrapText: true };
+      if (v === 'READY' || v === 'PASS') { ce.fill = fill('FFC6EFCE'); ce.font = { bold: true, color: { argb: 'FF375623' } }; }
+      else if (v === 'MISSING' || v === 'FAILED' || v === 'FAIL') { ce.fill = fill('FFFFC7CE'); ce.font = { bold: true, color: { argb: 'FF9C0006' } }; }
+      else if (v === 'NEEDS ATTENTION' || v === 'AT_RISK') { ce.fill = fill('FFFFEB9C'); ce.font = { bold: true, color: { argb: 'FF7D6608' } }; }
+      else if (v === 'N/A') { ce.fill = fill('FFE7E6E6'); ce.font = { bold: true, color: { argb: 'FF595959' } }; }
     }
     if (u.next_itl_col && u.itl_reply) {
       const cp = ws.getCell(u.row, u.next_itl_col);

@@ -17,6 +17,7 @@ import { composeAnswer } from './answer.mjs';
 import { answerWithLLM, translate, LANG_NAMES, llmAvailable, MODEL } from './llm.mjs';
 import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
+import { mailAvailable, sendReviewEmail } from './mailer.mjs';
 import * as qalog from './qalog.mjs';
 import * as leads from './leads.mjs';
 import * as billing from './billing.mjs';
@@ -272,18 +273,26 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No EOC file uploaded (.xlsx).' });
   try {
     const eoc = await readEOC(req.file.buffer);
+    const detected = eoc.type; // Piping | IAA, from the file's clauses
+    const chosen = ['Piping', 'IAA'].includes(String(req.body?.formType)) ? req.body.formType : null;
+    const type = chosen || detected; // the client picked an entry point; trust it, flag mismatch
+    const mismatch = !!(chosen && chosen !== detected);
     const answered = eoc.rows.filter((r) => r.answered).length;
     // Optional cap (transparent) so a huge EOC doesn't hit the request timeout.
     const limit = Math.min(parseInt(req.body?.limit || '', 10) || (parseInt(process.env.REVIEW_MAX_ROWS || '', 10) || 50), 400);
-    const report = await reviewEOC({ type: eoc.type, rows: eoc.rows, limit });
+    const report = await reviewEOC({ type, rows: eoc.rows, limit });
     const annotated = await writeEOC(req.file.buffer, report.updates);
-    const token = cacheDownload(annotated, `EOC-reviewed-${Date.now()}.xlsx`);
+    const token = cacheDownload(annotated, `EOC-${type}-review.xlsx`);
     if (billed) billing.useReview(revEmail); // consume one paid review credit on success
     leads.markTier(req.sessionToken, 'premium'); // record that this lead used premium
-    const reviewedCount = report.items.filter((i) => i.verdict && i.verdict !== 'MISSING').length;
-    console.log(`[review] type=${eoc.type} rows=${eoc.rows.length} answered=${answered} reviewed=${reviewedCount} dev=${devMode} ms=${Date.now() - t0}`);
+    const reviewedCount = report.items.filter((i) => i.readiness && i.readiness !== 'MISSING').length;
+    // Email a copy to the client (graceful: no-op unless SMTP is configured).
+    let emailed = false;
+    const to = leads.emailForToken(req.sessionToken);
+    if (mailAvailable()) emailed = await sendReviewEmail({ to, type, scoreboard: report.scoreboard, attachment: annotated, filename: `EOC-${type}-review.xlsx` });
+    console.log(`[review] type=${type} detected=${detected} rows=${eoc.rows.length} answered=${answered} reviewed=${reviewedCount} emailed=${emailed} dev=${devMode} ms=${Date.now() - t0}`);
     res.json({
-      type: eoc.type,
+      type, detected_type: detected, type_mismatch: mismatch,
       sheet: eoc.sheetName,
       total_item_rows: eoc.rows.length,
       answered_rows: answered,
@@ -293,8 +302,9 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
       scoreboard: report.scoreboard,
       items: report.items,
       download_token: token,
+      emailed, email_to: emailed ? to : '',
       dev_mode: devMode,
-      disclaimer: 'Reference guidance only — not a formal ITL determination. Final approval is subject to ITL review of the actual submission. Your uploaded EOC was processed in memory only and was not stored.',
+      disclaimer: 'Reference guidance only — not a formal ITL determination, and it does not see your actual attached documents/drawings. Final approval is subject to ITL review of the actual submission. Your uploaded EOC was processed in memory only and was not stored.',
     });
   } catch (err) {
     console.error('[review] error', err.message);

@@ -167,21 +167,29 @@
   .filebox.drag{border-color:var(--brand);background:#eef3fa}
   .license{border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:14px;width:230px}
   #reviewBtn{white-space:nowrap}
+  .prem-type{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 14px}
+  .pt-label{font-size:13px;color:var(--muted);font-weight:600;margin-right:4px}
+  .ptbtn{background:#eef2f7;border:1px solid var(--line);color:var(--muted);border-radius:20px;
+    padding:8px 14px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .ptbtn.active{background:var(--brand);border-color:var(--brand);color:#fff}
   .scoreboard{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
   .score{flex:1;min-width:90px;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:var(--card)}
   .score .n{font-size:26px;font-weight:800;line-height:1}
   .score .l{font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-top:4px}
-  .score.pass .n{color:#2f9e44} .score.atrisk .n{color:var(--warn)} .score.fail .n{color:var(--risk)}
-  .score.na .n{color:#7d6608} .score.missing .n{color:var(--muted)}
+  .score.ready .n{color:#2f9e44} .score.attention .n{color:var(--warn)}
+  .score.na .n{color:#595959} .score.missing .n{color:var(--risk)}
   .rev{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-bottom:10px;border-left:4px solid var(--line)}
-  .rev.PASS{border-left-color:#2f9e44} .rev.AT_RISK{border-left-color:var(--warn)}
-  .rev.FAIL{border-left-color:var(--risk)} .rev.N\/A{border-left-color:#7d6608} .rev.MISSING{border-left-color:#cbd5e1}
+  .rev.ready{border-left-color:#2f9e44} .rev.attention{border-left-color:var(--warn)}
+  .rev.missing{border-left-color:var(--risk)} .rev.na{border-left-color:#cbd5e1}
   .rev-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .vbadge{font-size:11px;font-weight:700;letter-spacing:.4px;padding:3px 9px;border-radius:7px;color:#fff}
-  .vbadge.PASS{background:#2f9e44} .vbadge.AT_RISK{background:var(--warn)} .vbadge.FAIL{background:var(--risk)}
-  .vbadge.N\/A{background:#7d6608} .vbadge.MISSING{background:#94a3b8}
+  .vbadge.ready{background:#2f9e44} .vbadge.attention{background:var(--warn)}
+  .vbadge.missing{background:var(--risk)} .vbadge.na{background:#94a3b8}
   .rev .req{font-size:13px;color:var(--muted);margin:6px 0}
   .rev .line{font-size:14px;margin-top:7px} .rev .line b{color:var(--brand-dark)}
+  .rev .line.exp{background:#f0f6fc;border:1px solid #d6e6f5;border-radius:8px;padding:8px 11px}
+  .warn{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:10px;padding:10px 14px;font-size:13px;margin:10px 0}
+  .emailed{font-size:13px;color:var(--accent);font-weight:600;margin:8px 0}
   .dl{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;
     padding:11px 20px;font-weight:600;font-size:15px;margin:6px 0 14px}
   /* shared Q&A */
@@ -251,11 +259,16 @@
   </div>
 
   <div id="premiumView" hidden>
-    <div class="prem-intro">Upload your filled EOC (.xlsx) and get it back reviewed line-by-line as ITL would — a verdict, the inspector's remark, the IB comment likely to come back, and a suggested fix for each answered row, plus a colour-coded annotated workbook to download. <b>Your file is processed in memory only — never stored.</b></div>
+    <div class="prem-intro">Fill in your EOC with your reply on every line, upload it (.xlsx), and get back — line by line — <b>what the IB/ITL will expect</b> for each clause and how your written reply looks: a readiness signal, the expected documents/tests/drawings, and a suggested fix. You get a colour-coded annotated workbook to download <b>and a copy by email</b>. <b>Note:</b> the review reads your typed replies only — it does <b>not</b> see your attached documents or drawings — and your file is processed in memory only, never stored.</div>
+    <div class="prem-type">
+      <span class="pt-label">I'm reviewing an EOC for:</span>
+      <button class="ptbtn active" id="ptPiping" data-t="Piping">Piping — Chapter 7</button>
+      <button class="ptbtn" id="ptIAA" data-t="IAA">IAA appliances — Chapters 4–6</button>
+    </div>
     <div class="prem-form">
       <label class="filebox" id="filebox">
         <input id="eocFile" type="file" accept=".xlsx" hidden />
-        <span id="fileLabel">Choose or drop your EOC .xlsx…</span>
+        <span id="fileLabel">Choose or drop your filled EOC .xlsx…</span>
       </label>
       <input id="license" class="license" type="text" placeholder="License key (leave blank in dev mode)" autocomplete="off" />
       <button class="go" id="reviewBtn">Review my EOC</button>
@@ -595,16 +608,23 @@ fileInput.onchange=()=>{ if(fileInput.files[0]){ fileLabel.textContent=fileInput
 ['dragleave','drop'].forEach(ev=>filebox.addEventListener(ev,e=>{e.preventDefault();filebox.classList.remove('drag');}));
 filebox.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f){ fileInput.files=e.dataTransfer.files; fileLabel.textContent=f.name; filebox.classList.add('has'); } });
 
-function scoreCard(n,label,cls){ return `<div class="score ${cls}"><div class="n">${n}</div><div class="l">${label}</div></div>`; }
+// two explicit entry points: Piping (Ch 7) vs IAA (Ch 4–6)
+let reviewType='Piping';
+$('#ptPiping').onclick=()=>{ reviewType='Piping'; $('#ptPiping').classList.add('active'); $('#ptIAA').classList.remove('active'); };
+$('#ptIAA').onclick=()=>{ reviewType='IAA'; $('#ptIAA').classList.add('active'); $('#ptPiping').classList.remove('active'); };
+
+const READY_LABEL={READY:'Ready',NEEDS_ATTENTION:'Needs attention','N/A':'N/A',MISSING:'Missing'};
+const READY_CLS={READY:'ready',NEEDS_ATTENTION:'attention','N/A':'na',MISSING:'missing'};
+function scoreCard(n,label,cls){ return `<div class="score ${cls}"><div class="n">${n||0}</div><div class="l">${label}</div></div>`; }
 function revCard(it){
-  const v=it.verdict||'?';
-  return `<div class="rev ${v}">
-    <div class="rev-head"><span class="vbadge ${v}">${esc(v)}</span><b>§${esc(it.clause)}</b>
+  const r=it.readiness||'NEEDS_ATTENTION'; const cls=READY_CLS[r]||'attention';
+  return `<div class="rev ${cls}">
+    <div class="rev-head"><span class="vbadge ${cls}">${esc(READY_LABEL[r]||r)}</span><b>§${esc(it.clause)}</b>
       ${it.observed_in_projects?`<span class="freq">${it.observed_in_projects} past EOCs</span>`:''}</div>
     ${it.requirement?`<div class="req"${isHe(it.requirement)?' dir="rtl"':''}>${esc(it.requirement)}</div>`:''}
+    ${it.ib_expectations?`<div class="line exp"><b>What the IB/ITL will expect:</b> ${esc(it.ib_expectations)}</div>`:''}
     ${it.client_answer?`<div class="line"><b>Your reply:</b> ${esc(it.client_answer)}</div>`:''}
-    ${it.col_D?`<div class="line"><b>ITL remark:</b> ${esc(it.col_D)}</div>`:''}
-    ${it.predicted_ib?`<div class="line"><b>IB will likely say:</b> ${esc(it.predicted_ib)}</div>`:''}
+    ${it.reply_assessment?`<div class="line"><b>Assessment of your reply:</b> ${esc(it.reply_assessment)}</div>`:''}
     ${it.suggested_fix?`<div class="line"><b>Suggested fix:</b> ${esc(it.suggested_fix)}</div>`:''}
   </div>`;
 }
@@ -614,12 +634,12 @@ $('#reviewBtn').onclick=async ()=>{
   if(reviewing) return;
   const f=fileInput.files[0];
   const out=$('#reviewOut');
-  if(!f){ out.innerHTML='<div class="rev notfound">Please choose an EOC .xlsx file first.</div>'; return; }
+  if(!f){ out.innerHTML='<div class="rev notfound">Please choose your filled EOC .xlsx file first.</div>'; return; }
   reviewing=true; const btn=$('#reviewBtn'); btn.disabled=true; btn.textContent='Reviewing…';
-  out.innerHTML='<div class="meta-sm">Uploading and reviewing your EOC line-by-line — this can take a minute for a large file…</div>';
+  out.innerHTML=`<div class="meta-sm">Reviewing your <b>${esc(reviewType)}</b> EOC line-by-line — this can take a minute for a large file…</div>`;
   try{
     const fd=new FormData();
-    fd.append('eoc', f);
+    fd.append('eoc', f); fd.append('formType', reviewType);
     const lic=$('#license').value.trim(); if(lic) fd.append('license', lic);
     const headers={'x-session':session}; if(lic) headers['x-license-key']=lic;
     const res=await fetch('/review',{method:'POST', body:fd, headers});
@@ -629,16 +649,17 @@ $('#reviewBtn').onclick=async ()=>{
     if(!res.ok){ out.innerHTML=`<div class="rev notfound">${esc(data.error||'Review failed.')}</div>`; return; }
     const s=data.scoreboard;
     const board=`<div class="scoreboard">
-      ${scoreCard(s.PASS,'Pass','pass')}
-      ${scoreCard(s.AT_RISK,'At risk','atrisk')}
-      ${scoreCard(s.FAIL,'Fail','fail')}
+      ${scoreCard(s.READY,'Ready','ready')}
+      ${scoreCard(s.NEEDS_ATTENTION,'Needs attention','attention')}
       ${scoreCard(s.N_A,'N/A','na')}
       ${scoreCard(s.MISSING,'Missing','missing')}
     </div>`;
-    const head=`<div class="meta-sm"><b>${esc(data.type)} EOC</b> · ${data.answered_rows} answered rows · reviewed ${data.reviewed_rows}${data.capped?` (first ${data.cap} — raise the limit for the full audit)`:''}${data.dev_mode?' · dev mode (no license required)':''}</div>`;
+    const head=`<div class="meta-sm"><b>${esc(data.type)} EOC</b> · ${data.answered_rows} answered rows · reviewed ${data.reviewed_rows}${data.capped?` (first ${data.cap} — raise the limit for the full audit)`:''}${data.dev_mode?' · dev mode':''}</div>`;
+    const mism = data.type_mismatch ? `<div class="warn">Heads-up: you chose <b>${esc(data.type)}</b>, but the file looks like a <b>${esc(data.detected_type)}</b> EOC — it was reviewed as <b>${esc(data.type)}</b>. If that's wrong, switch the type above and re-run.</div>` : '';
     const dl=`<a class="dl" href="/review/download/${data.download_token}">⬇ Download annotated EOC (.xlsx)</a>`;
-    const cards=data.items.filter(i=>i.verdict).map(revCard).join('');
-    out.innerHTML = head + board + dl + cards + `<div class="disc">${esc(data.disclaimer)}</div>`;
+    const emailed = data.emailed ? `<div class="emailed">✓ A copy was emailed to ${esc(data.email_to)}.</div>` : '';
+    const cards=data.items.filter(i=>i.readiness).map(revCard).join('');
+    out.innerHTML = head + mism + board + dl + emailed + cards + `<div class="disc">${esc(data.disclaimer)}</div>`;
   }catch(e){ out.innerHTML=`<div class="rev notfound">Network error: ${esc(e.message)}</div>`; }
   finally{ reviewing=false; btn.disabled=false; btn.textContent='Review my EOC'; }
 };

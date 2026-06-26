@@ -17,32 +17,30 @@ const MODEL = process.env.EOC_MODEL || 'claude-opus-4-8';
 let client = null;
 const getClient = () => (client ||= new Anthropic());
 
-const SYSTEM = `You are a senior inspector at ITL, an accredited Inspection Body (IB) under Israeli Standard SI 6464 (2017), reviewing a client's filled-in EOC (Evaluation of Conformity) BEFORE they submit it. For each checklist row you are given: the SI 6464 clause, its requirement, and the client's answer. You are also given grounding: the SI 6464 standard text (authoritative for the requirement) and the anonymized history of how this clause was resolved across many past EOCs (the IB comments commonly raised and what closed the item).
+const SYSTEM = `You are a senior inspector at ITL, an accredited Inspection Body (IB) under Israeli Standard SI 6464 (2017), helping a client PREPARE their EOC (Evaluation of Conformity) before they submit it.
 
-Apply ITL's house methodology and judge each row as the IB would:
-- PASS — the answer satisfies the requirement; the IB would accept/close it.
+CRITICAL LIMITATION: you can see ONLY the client's typed reply for each line. You CANNOT see the attached documents, drawings, certificates, calculations or test reports themselves. So you must NOT certify that the evidence is compliant. Your job for each row is to tell the client:
+(a) WHAT THE IB/ITL WILL EXPECT for this clause — the specific documents, drawings, tests, calculations and certifications an inspector looks for; and
+(b) whether their typed reply looks complete and clear, or thin/ambiguous and likely to draw an IB comment.
+
+For each row you get: the SI 6464 clause, its requirement, and the client's typed answer; plus grounding — the SI 6464 standard text (authoritative for the requirement) and the anonymized history of how this clause was resolved across many past EOCs (the IB comments commonly raised and what closed the item).
+
+Judge each row's READINESS (NOT a pass/fail of evidence you cannot see):
+- READY — the typed reply is complete and clear and names the right kind of evidence; likely accepted IF the actual evidence matches.
+- NEEDS_ATTENTION — the reply is thin, vague, or may not cover what the IB expects; likely to draw a comment.
 - N/A — the requirement genuinely does not apply to this installation.
-- AT_RISK — the answer is weak, ambiguous, or incomplete; the IB will probably raise a comment. Predict that comment.
-- FAIL — required evidence is missing, wrong, or non-compliant; the item would be held open.
+- MISSING — no usable reply, or clearly insufficient.
 
-For each row return STRICT JSON (no prose outside the array) with this shape:
+Return STRICT JSON (no prose outside the array), one object per row, with this shape:
 {
  "row": <number>,
- "verdict": "PASS" | "N/A" | "AT_RISK" | "FAIL",
- "col_D": "<ITL Results/Remarks per house format>",
- "itl_reply": "<the ITL ping-pong reply per house format>",
- "predicted_ib": "<the IB comment likely to come back, or empty if PASS/N/A>",
- "suggested_fix": "<concrete wording/action that would close the item, or empty if PASS>"
+ "readiness": "READY" | "NEEDS_ATTENTION" | "N/A" | "MISSING",
+ "ib_expectations": "<what the IB/ITL will expect for this clause — the specific documents/drawings/tests/calculations/certifications. ALWAYS fill this; it is the main value of the review.>",
+ "reply_assessment": "<short assessment of the client's TYPED reply: is it complete and clear, or what looks thin/ambiguous? Acknowledge you have not seen the attached evidence.>",
+ "suggested_fix": "<concrete wording or evidence that would satisfy the IB; empty only if READY.>"
 }
 
-House formats (English only, formal inspection language, no first person):
-- col_D PASS: "The attached [document] fulfils this item."
-- col_D N/A: "Item not applicable — [one-line reason]."
-- col_D AT_RISK/FAIL: "[what was submitted]. [what is missing or deficient]."
-- itl_reply PASS: "Closed. [document] received and reviewed. PASS."
-- itl_reply N/A: "N/A. [one-sentence reason]."
-- itl_reply AT_RISK/FAIL: a short formal note stating what is missing; cite the specific SI 6464 clause; end with "Item held open pending submission. FAILED." (cite the clause ONLY for AT_RISK/FAIL, never for PASS/N/A).
-Ground predicted_ib and suggested_fix in the corpus history when available ("the IB commonly asks…"). Do not invent requirements. If the client's answer is ambiguous, judge AT_RISK or FAIL and say exactly what clarification is needed. NEVER name or hint at any other client/site/person from the grounding — speak generically.
+Rules (formal inspection English, no first person): ALWAYS populate ib_expectations, even when READY. Cite the SI 6464 clause when you state a requirement. Ground ib_expectations and suggested_fix in the standard + corpus history ("the IB commonly asks for…") — do not invent requirements. NEVER name or hint at any other client/site/person/project from the grounding — speak generically.
 
 Return ONLY a JSON array of one object per input row.`;
 
@@ -104,26 +102,44 @@ export async function reviewEOC({ type, rows, limit, onProgress }) {
     onProgress?.(Math.min(done, reviewable.length), reviewable.length);
   }
 
-  const items = [], updates = [], score = { PASS: 0, N_A: 0, AT_RISK: 0, FAIL: 0, MISSING: 0, total: 0 };
+  // readiness → workbook column-E label
+  const LABEL = { READY: 'READY', NEEDS_ATTENTION: 'NEEDS ATTENTION', 'N/A': 'N/A', MISSING: 'MISSING' };
+  const normReadiness = (v) => {
+    const s = String(v || '').toUpperCase().replace(/\s+/g, '_');
+    if (s === 'READY') return 'READY';
+    if (s === 'N/A' || s === 'NA' || s === 'N_A') return 'N/A';
+    if (s === 'MISSING') return 'MISSING';
+    return 'NEEDS_ATTENTION';
+  };
+  const scoreKey = { READY: 'READY', NEEDS_ATTENTION: 'NEEDS_ATTENTION', 'N/A': 'N_A', MISSING: 'MISSING' };
+
+  const items = [], updates = [], score = { READY: 0, NEEDS_ATTENTION: 0, N_A: 0, MISSING: 0, total: 0 };
   for (const r of rows) {
     if (!r.answered) {
-      if (r.requirement && r.clause) { score.MISSING++; score.total++;
-        items.push({ row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, verdict: 'MISSING', col_D: '', itl_reply: '', predicted_ib: 'Required item not answered — the IB will hold it open.', suggested_fix: 'Provide the required document/evidence for this clause.', client_answer: r.client_answer || '' });
+      if (r.requirement && r.clause) {
+        score.MISSING++; score.total++;
+        const exp = 'The IB will expect a documented reply with supporting evidence for this clause.';
+        items.push({ row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, readiness: 'MISSING', ib_expectations: exp, reply_assessment: 'No reply provided for this line.', suggested_fix: 'Provide the required document/evidence and a written reply for this clause.', client_answer: '', observed_in_projects: getClause(r.clause)?.corpus_count || 0 });
+        updates.push({ row: r.row, col_D: `MISSING — ${exp}`, col_E: 'MISSING', next_itl_col: r.next_itl_col, itl_reply: 'Provide the required document/evidence for this clause.' });
       }
       continue;
     }
     const rev = reviews.get(r.row);
     if (!rev) continue;
-    const verdict = String(rev.verdict || '').toUpperCase().replace('N/A', 'N/A');
-    score[verdict === 'N/A' ? 'N_A' : (score[verdict] != null ? verdict : 'AT_RISK')]++; score.total++;
+    const readiness = normReadiness(rev.readiness);
+    score[scoreKey[readiness]]++; score.total++;
+    const exp = rev.ib_expectations || '';
+    const assess = rev.reply_assessment || '';
+    const fix = rev.suggested_fix || '';
     items.push({
       row: r.row, clause: r.clause, section: r.section, requirement: r.requirement,
       client_answer: r.client_answer || '',
-      verdict: rev.verdict, col_D: rev.col_D || '', itl_reply: rev.itl_reply || '',
-      predicted_ib: rev.predicted_ib || '', suggested_fix: rev.suggested_fix || '',
+      readiness, ib_expectations: exp, reply_assessment: assess, suggested_fix: fix,
       observed_in_projects: getClause(r.clause)?.corpus_count || 0,
     });
-    updates.push({ row: r.row, col_D: rev.col_D, col_E: (rev.verdict === 'AT_RISK' ? 'FAILED' : rev.verdict), next_itl_col: r.next_itl_col, itl_reply: rev.itl_reply });
+    // workbook: col D leads with what the IB expects (+ the reply assessment); col E = readiness.
+    const colD = `${LABEL[readiness]} — IB will expect: ${exp}${assess ? ` | Reply: ${assess}` : ''}`;
+    updates.push({ row: r.row, col_D: colD, col_E: LABEL[readiness], next_itl_col: r.next_itl_col, itl_reply: fix || (readiness === 'READY' ? 'Reply looks complete — ensure the named evidence is attached.' : '') });
   }
   items.sort((a, b) => String(a.clause).localeCompare(String(b.clause), undefined, { numeric: true }));
   return { scoreboard: score, items, updates };
