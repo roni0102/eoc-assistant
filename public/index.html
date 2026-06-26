@@ -411,13 +411,15 @@ async function ask(){
   lastQ = q; lastQt = now;
   $('#q').value=''; chips.style.display='none';
   busy=true; const btn=$('#go'); btn.disabled=true; btn.textContent='…';
-  bubble('user', `<div class="answer-b"${isHe(q)?' dir="rtl"':''}>${esc(q)}</div>`);
+  const userBubble = bubble('user', `<div class="answer-b"${isHe(q)?' dir="rtl"':''}>${esc(q)}</div>`);
   const pending = bubble('bot pending', '<div class="answer-h">Assistant</div><div class="answer-b muted">Thinking…</div>');
   try{
     const res = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json','x-session':session},
       body: JSON.stringify({q, history: convo})});
     const data = await res.json();
-    if(res.status===401 && data.gate){ openGate(); pending.remove(); return; }
+    // session expired mid-query → clean up this question and re-gate; restore the box so the
+    // user can re-ask in one click after entering details (no orphaned bubble left behind).
+    if(res.status===401 && data.gate){ pending.remove(); userBubble.remove(); $('#q').value=q; lastQ=''; openGate(); return; }
     if(res.status===429 && data.limit){
       pending.classList.remove('pending');
       pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b limit-msg">${esc(data.message)}<br><br><button class="go goExpert">💬 Talk to a real expert →</button></div>`;
@@ -467,7 +469,15 @@ $('#sharedQA').addEventListener('toggle', ()=>{ if($('#sharedQA').open && !share
 // ---- entry gate (lead capture) ----
 function openGate(){ session=''; store.del('eoc_session'); $('#gate').hidden=false; document.body.classList.add('gated'); setTimeout(()=>$('#gCompany').focus(),50); }
 function closeGate(){ $('#gate').hidden=true; document.body.classList.remove('gated'); }
-if(!session){ openGate(); }
+// Validate any stored session on load so the gate shows UP FRONT (not mid-query) when the
+// server has forgotten the token (e.g. after a free-instance restart). On a network error we
+// keep the session — a later 401 still re-gates as a fallback.
+(async function initGate(){
+  if(session){
+    try{ const r=await fetch('/session',{headers:{'x-session':session}}); if(!r.ok){ session=''; store.del('eoc_session'); } }catch{}
+  }
+  if(!session) openGate();
+})();
 let gating=false;
 async function submitGate(){
   if(gating) return;

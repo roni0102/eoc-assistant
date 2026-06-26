@@ -19,14 +19,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '..', 'data');
 const LEADS_PATH = path.join(DATA_DIR, 'leads.jsonl');
 const USAGE_PATH = path.join(DATA_DIR, 'usage.json'); // per-email question counts (durable cap)
+const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json'); // active tokens (survive restarts)
 
 const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 export const validEmail = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(norm(s));
 export const validPhone = (s) => (norm(s).match(/\d/g) || []).length >= 7 && /^[\d\s+\-().]{7,}$/.test(norm(s));
 export const validCompany = (s) => norm(s).length >= 2;
 
-// In-memory sessions: token -> lead id. (Restart invalidates tokens → visitor re-gates;
-// the client handles a 401 by re-showing the gate.)
+// Sessions: token -> lead id. Persisted to disk so a token stays valid across instance
+// restarts/sleep-wake (otherwise returning visitors get re-gated constantly on the free plan).
 const sessions = new Map();
 
 // Free-plan question cap (to control token spend). Override with FREE_QUERY_LIMIT.
@@ -54,6 +55,24 @@ export function useQuery(token) {
   usageByEmail.set(key, used + 1);
   persistUsage();
   return { ok: true, used: used + 1, remaining: FREE_LIMIT - (used + 1), limit: FREE_LIMIT };
+}
+
+// Load persisted sessions on startup → tokens survive restarts.
+(() => {
+  try {
+    const obj = JSON.parse(fs.readFileSync(SESSIONS_PATH, 'utf8'));
+    for (const [tok, v] of Object.entries(obj)) {
+      if (v && v.id) { sessions.set(tok, v.id); if (v.email) tokenEmail.set(tok, v.email); }
+    }
+  } catch {}
+})();
+function persistSessions() {
+  try {
+    const obj = {};
+    for (const [tok, id] of sessions) obj[tok] = { id, email: tokenEmail.get(tok) || '' };
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SESSIONS_PATH, JSON.stringify(obj));
+  } catch {}
 }
 
 // Optional Google Sheets mirror: every new lead is POSTed to a Google Apps Script web
@@ -90,6 +109,7 @@ export function addLead({ email, phone, company }) {
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, lead.id);
   tokenEmail.set(token, email.toLowerCase()); // bind token→email for the per-email quota
+  persistSessions(); // keep the token valid across restarts
   return { ok: true, token };
 }
 

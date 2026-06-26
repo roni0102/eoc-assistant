@@ -81,6 +81,9 @@ function logQuery(meta) {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, lines: loadKB().items.length }));
 
+// Validate a stored session token on page load (so the gate shows up front, not mid-query).
+app.get('/session', requireGate, (_req, res) => res.json({ ok: true }));
+
 // Lead-capture entry gate: store the visitor's contact details, unlock the session.
 app.post('/lead', rateLimit, (req, res) => {
   const { email, phone, company } = req.body || {};
