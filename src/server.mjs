@@ -19,13 +19,16 @@ import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
 import * as qalog from './qalog.mjs';
 import * as leads from './leads.mjs';
+import * as billing from './billing.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.resolve(__dirname, '..', 'public');
 const PORT = process.env.PORT || 3000;
 
 const app = express();
+app.set('trust proxy', true); // correct https/origin behind Render's proxy
 app.use(express.json({ limit: '64kb' }));
+app.use(express.urlencoded({ extended: true, limit: '64kb' })); // Grow callback is form-encoded
 app.use(express.static(PUBLIC));
 
 // --- Premium: in-memory upload (never written to disk), license gate, download cache ---
@@ -127,10 +130,47 @@ app.post('/translate', rateLimit, requireGate, async (req, res) => {
   }
 });
 
+// --- Billing (Grow / Meshulam) ---------------------------------------------------------
+// Account/entitlement status for the current visitor (drives the UI's pay buttons).
+app.get('/me', requireGate, (req, res) => {
+  const email = leads.emailForToken(req.sessionToken);
+  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: billing.entitlements(email) });
+});
+
+// Start a payment: returns a hosted-checkout URL the browser redirects to.
+app.post('/checkout', rateLimit, requireGate, async (req, res) => {
+  const kind = String(req.body?.kind || '').trim();
+  if (!['review', 'consult', 'subscription'].includes(kind)) return res.status(400).json({ error: 'Unknown product.' });
+  const email = leads.emailForToken(req.sessionToken);
+  const origin = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+  try {
+    const { url } = await billing.createCheckout({ kind, email, origin });
+    res.json({ url });
+  } catch (e) {
+    if (e.code === 'NO_BILLING') return res.status(503).json({ error: 'Payments are not connected yet — please check back soon.' });
+    console.error('[checkout] failed:', e?.message || e);
+    res.status(502).json({ error: 'Could not start payment. Please try again.' });
+  }
+});
+
+// Grow server-to-server callback: confirm payment → grant the entitlement.
+app.post('/pay/callback', async (req, res) => {
+  try {
+    const r = await billing.handleCallback(req.body);
+    console.log(`[pay] callback ok=${r.ok} kind=${r.kind || '?'}`);
+  } catch (e) { console.error('[pay] callback error:', e?.message || e); }
+  res.json({ received: true }); // always 200 so the gateway doesn't retry-storm
+});
+
 // Request a consultation with a real ITL expert (captured + mirrored to the leads sheet).
 app.post('/expert', rateLimit, requireGate, (req, res) => {
   const message = String(req.body?.message ?? '').slice(0, 2000).trim();
   if (!message) return res.status(400).json({ error: 'Please describe what you need help with.' });
+  // Paid consultation: requires a consult credit once billing is live (graceful: free until then).
+  const email = leads.emailForToken(req.sessionToken);
+  if (billing.billingAvailable() && !billing.useConsult(email)) {
+    return res.status(402).json({ pay: 'consult', error: 'A paid consultation is required to send this request.' });
+  }
   const r = leads.addExpertRequest({ token: req.sessionToken, message });
   if (!r.ok) return res.status(500).json({ error: r.error || 'Could not send your request.' });
   console.log('[expert] consultation request captured');
@@ -141,13 +181,19 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
   const t0 = Date.now();
   const q = String(req.body?.q ?? '').slice(0, 2000).trim();
   if (!q) return res.status(400).json({ error: 'Empty query.' });
-  // Free-plan cap: each session gets a limited number of questions (token-spend control).
-  const quota = leads.useQuery(req.sessionToken);
-  if (!quota.ok) {
-    return res.status(429).json({
-      limit: true,
-      message: `You've reached the free limit of ${quota.limit} questions. For more, talk to a real ITL expert.`,
-    });
+  // Free-plan cap (token-spend control). Subscribers skip the cap entirely (unlimited).
+  const askEmail = leads.emailForToken(req.sessionToken);
+  const subscribed = billing.hasSub(askEmail);
+  let quota = null;
+  if (!subscribed) {
+    quota = leads.useQuery(req.sessionToken);
+    if (!quota.ok) {
+      return res.status(429).json({
+        limit: true,
+        canSubscribe: billing.billingAvailable(),
+        message: `You've reached the free limit of ${quota.limit} questions.${billing.billingAvailable() ? ' Subscribe for unlimited, or talk to a real ITL expert.' : ' For more, talk to a real ITL expert.'}`,
+      });
+    }
   }
   // prior conversation turns sent by the browser (stateless backend)
   const history = Array.isArray(req.body?.history) ? req.body.history : [];
@@ -185,7 +231,7 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
         tier: 'free',
       });
     }
-    answer.free_remaining = quota.remaining; // let the UI show questions left
+    if (quota) answer.free_remaining = quota.remaining; else answer.unlimited = true; // subscribers = unlimited
     res.json(answer);
   } catch (err) {
     if (err.code === 'ANON_BLOCK') {
@@ -204,8 +250,17 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
 app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
   const t0 = Date.now();
   if (!llmAvailable()) return res.status(503).json({ error: 'Premium review needs the LLM — set ANTHROPIC_API_KEY.' });
-  const gate = premiumOk(req);
-  if (!gate.ok) return res.status(402).json({ error: 'Premium feature — a valid license key is required.' });
+  // Paid review: once billing is live, require a review credit (per-use; the subscription
+  // covers questions, not reviews). The credit is consumed on SUCCESS (below), not here, so a
+  // failed review never burns it. Until billing is connected, use the license-key gate.
+  const revEmail = leads.emailForToken(req.sessionToken);
+  const billed = billing.billingAvailable();
+  if (billed) {
+    if (billing.entitlements(revEmail).reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A paid EOC review is required.' });
+  } else {
+    const gate = premiumOk(req);
+    if (!gate.ok) return res.status(402).json({ error: 'Premium feature — a valid license key is required.' });
+  }
   if (!req.file) return res.status(400).json({ error: 'No EOC file uploaded (.xlsx).' });
   try {
     const eoc = await readEOC(req.file.buffer);
@@ -215,6 +270,7 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
     const report = await reviewEOC({ type: eoc.type, rows: eoc.rows, limit });
     const annotated = await writeEOC(req.file.buffer, report.updates);
     const token = cacheDownload(annotated, `EOC-reviewed-${Date.now()}.xlsx`);
+    if (billed) billing.useReview(revEmail); // consume one paid review credit on success
     leads.markTier(req.sessionToken, 'premium'); // record that this lead used premium
     const reviewedCount = report.items.filter((i) => i.verdict && i.verdict !== 'MISSING').length;
     console.log(`[review] type=${eoc.type} rows=${eoc.rows.length} answered=${answered} reviewed=${reviewedCount} dev=${gate.dev} ms=${Date.now() - t0}`);

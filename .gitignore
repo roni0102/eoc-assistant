@@ -4,3 +4,4 @@ data/qa_log.jsonl
 data/leads.jsonl
 data/usage.json
 data/sessions.json
+data/entitlements.json

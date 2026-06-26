@@ -114,6 +114,7 @@ export function addLead({ email, phone, company }) {
 }
 
 export const validToken = (token) => !!token && sessions.has(token);
+export const emailForToken = (token) => tokenEmail.get(token) || '';
 
 /** Note that a lead used the premium tier (appended as an update line). */
 export function markTier(token, tier) {

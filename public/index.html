@@ -145,6 +145,14 @@
   .limit-msg{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:10px;padding:12px 14px}
   .remaining{font-size:12.5px;color:var(--muted);margin-top:8px}
   .remaining b{color:var(--brand-dark)}
+  /* pay buttons + toast */
+  .go.pay{background:linear-gradient(135deg,#16a34a,#0d8a3e);border:0}
+  .go.pay:hover{filter:brightness(1.06)}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;
+    background:#0f2540;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;z-index:200;
+    box-shadow:0 8px 28px rgba(0,0,0,.28);transition:opacity .25s,transform .25s;max-width:90vw;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{background:#7c2d12} .toast.info{background:#334155}
   @media(max-width:560px){.topnav-in{flex-direction:column;gap:8px}.tab{padding:7px 12px;font-size:13px}}
   /* premium */
   .prem-intro{font-size:14px;color:var(--ink);background:#f0f6fc;border:1px solid #d6e6f5;
@@ -422,7 +430,8 @@ async function ask(){
     if(res.status===401 && data.gate){ pending.remove(); userBubble.remove(); $('#q').value=q; lastQ=''; openGate(); return; }
     if(res.status===429 && data.limit){
       pending.classList.remove('pending');
-      pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b limit-msg">${esc(data.message)}<br><br><button class="go goExpert">💬 Talk to a real expert →</button></div>`;
+      const sub = data.canSubscribe ? `${payBtn('subscription','⭐ Subscribe — unlimited')} ` : '';
+      pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b limit-msg">${esc(data.message)}<br><br>${sub}<button class="go goExpert">💬 Talk to a real expert →</button></div>`;
       pending.querySelector('.goExpert').onclick=()=>showTab('expert');
       pending.scrollIntoView({behavior:'smooth', block:'start'});
       return;
@@ -476,7 +485,7 @@ function closeGate(){ $('#gate').hidden=true; document.body.classList.remove('ga
   if(session){
     try{ const r=await fetch('/session',{headers:{'x-session':session}}); if(!r.ok){ session=''; store.del('eoc_session'); } }catch{}
   }
-  if(!session) openGate();
+  if(!session) openGate(); else refreshMe();
 })();
 let gating=false;
 async function submitGate(){
@@ -493,7 +502,7 @@ async function submitGate(){
     let data={}; try{ data=await r.json(); }catch{}
     if(!r.ok){ show(data.error || ('Something went wrong ('+r.status+'). Please try again.')); return; }
     if(!data.token){ show('Unexpected response — please try again.'); return; }
-    session=data.token; store.set('eoc_session', session); closeGate();
+    session=data.token; store.set('eoc_session', session); closeGate(); refreshMe();
   }catch(ex){ show('Could not reach the server — check your connection and try again.'); }
   finally{ gating=false; btn.disabled=false; btn.textContent='Enter'; }
 }
@@ -513,15 +522,46 @@ $('#tabFree').onclick=()=>showTab('free');
 $('#tabPrem').onclick=()=>showTab('premium');
 $('#tabExpert').onclick=()=>showTab('expert');
 
+// ---- billing (Grow) helpers ----
+let ME = { billing:false, pricing:{}, entitlements:{} };
+async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok) ME=await r.json(); }catch{} }
+function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kind]}` : ''; }
+function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
+async function goCheckout(kind){
+  try{
+    const r=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({kind})});
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401 && d.gate){ openGate(); return; }
+    if(!r.ok || !d.url){ toast(d.error||'Payments are not available right now.','err'); return; }
+    window.location.href=d.url; // → Grow hosted checkout
+  }catch(e){ toast('Could not start payment. Please try again.','err'); }
+}
+function toast(msg, kind){
+  const t=document.createElement('div'); t.className='toast '+(kind||'ok'); t.textContent=msg; document.body.appendChild(t);
+  requestAnimationFrame(()=>t.classList.add('show'));
+  setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300); }, 5500);
+}
+// handle return from Grow checkout (?paid=… / ?canceled=1)
+(function paidReturn(){
+  const p=new URLSearchParams(location.search); const paid=p.get('paid'), canceled=p.get('canceled');
+  if(!paid && !canceled) return;
+  history.replaceState({}, '', location.pathname);
+  if(canceled){ toast('Payment canceled — nothing was charged.','info'); return; }
+  const msg={review:'Payment received — upload your EOC below to run the review.', consult:'Payment received — send your consultation request below.', subscription:'Subscription active — you now have unlimited questions.'};
+  toast('✓ '+(msg[paid]||'Thank you!'),'ok');
+  if(paid==='review') showTab('premium'); else if(paid==='consult') showTab('expert');
+})();
+
 // ---- talk to an expert ----
 $('#expertBtn').onclick=async ()=>{
   const msg=$('#expertMsg').value.trim(); const note=$('#expertNote');
   if(!msg){ note.textContent='Please describe what you need help with.'; note.className='expert-note err'; return; }
-  const btn=$('#expertBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='Sending…'; note.textContent='';
+  const btn=$('#expertBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='Sending…'; note.innerHTML='';
   try{
     const r=await fetch('/expert',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({message:msg})});
     const d=await r.json().catch(()=>({}));
     if(r.status===401 && d.gate){ openGate(); return; }
+    if(r.status===402 && d.pay==='consult'){ note.className='expert-note'; note.innerHTML=`A paid consultation is required to send this request.<br>${payBtn('consult','Book a consultation')}`; return; }
     if(!r.ok){ note.textContent=d.error||'Could not send — please try again.'; note.className='expert-note err'; return; }
     $('#expertMsg').value=''; note.textContent='✓ Request sent. An ITL expert will contact you using the details you provided.'; note.className='expert-note ok';
   }catch(e){ note.textContent='Network error — please try again.'; note.className='expert-note err'; }
@@ -566,6 +606,7 @@ $('#reviewBtn').onclick=async ()=>{
     const res=await fetch('/review',{method:'POST', body:fd, headers});
     const data=await res.json();
     if(res.status===401 && data.gate){ openGate(); return; }
+    if(res.status===402 && data.pay==='review'){ out.innerHTML=`<div class="rev"><b>Paid feature.</b> Unlock a full ITL-style review of this EOC.<br><br>${payBtn('review','Pay & review my EOC')}</div>`; return; }
     if(!res.ok){ out.innerHTML=`<div class="rev notfound">${esc(data.error||'Review failed.')}</div>`; return; }
     const s=data.scoreboard;
     const board=`<div class="scoreboard">
