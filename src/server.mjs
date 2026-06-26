@@ -277,10 +277,20 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
     const chosen = ['Piping', 'IAA'].includes(String(req.body?.formType)) ? req.body.formType : null;
     const type = chosen || detected; // the client picked an entry point; trust it, flag mismatch
     const mismatch = !!(chosen && chosen !== detected);
-    const answered = eoc.rows.filter((r) => r.answered).length;
+    // Scope to the chosen form's chapters: Piping = Chapter 7 only; IAA = Chapters 4–6 only.
+    // The client uploads the FULL EOC, but a review is for ONE form — never cross-check the other.
+    const ch = (c) => parseInt(String(c).split('.')[0], 10);
+    const inScope = type === 'Piping'
+      ? (c) => ch(c) === 7 // Piping = Chapter 7 only
+      : (c) => ch(c) >= 4 && ch(c) !== 7; // IAA = Ch 4–6 + appliance chapters (e.g. 21), never piping
+    const scoped = eoc.rows.filter((r) => r.clause && inScope(r.clause));
+    if (!scoped.length) {
+      return res.status(400).json({ error: `No ${type === 'Piping' ? 'Chapter 7 (Piping)' : 'Chapter 4–6 (IAA appliance)'} lines were found in this file${detected !== type ? ` — it looks like a ${detected} EOC, so switch the type above and re-run` : ''}.` });
+    }
+    const answered = scoped.filter((r) => r.answered).length;
     // Optional cap (transparent) so a huge EOC doesn't hit the request timeout.
     const limit = Math.min(parseInt(req.body?.limit || '', 10) || (parseInt(process.env.REVIEW_MAX_ROWS || '', 10) || 50), 400);
-    const report = await reviewEOC({ type, rows: eoc.rows, limit });
+    const report = await reviewEOC({ type, rows: scoped, limit });
     const annotated = await writeEOC(req.file.buffer, report.updates);
     const token = cacheDownload(annotated, `EOC-${type}-review.xlsx`);
     if (billed) billing.useReview(revEmail); // consume one paid review credit on success
