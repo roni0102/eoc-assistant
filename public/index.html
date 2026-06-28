@@ -173,6 +173,15 @@
   .modal-actions{display:flex;gap:10px;margin-top:20px}
   .modal-actions .go{flex:1}
   .ghost{background:#eef2f7;border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:11px 16px;font-weight:600;cursor:pointer}
+  /* pricing / checkout */
+  .pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:6px}
+  .price-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column}
+  .pc-name{font-size:15px;font-weight:700;color:var(--ink)}
+  .pc-price{font-size:28px;font-weight:800;color:var(--brand-dark);margin:8px 0 2px}
+  .pc-price span{font-size:14px;font-weight:600;color:var(--muted)}
+  .pc-desc{font-size:13px;color:var(--muted);line-height:1.5;flex:1;margin-bottom:14px}
+  .price-card .go{width:100%}
+  .pc-note{grid-column:1/-1;font-size:13px;color:var(--muted);text-align:center;background:#fbfcfe;border:1px dashed var(--line);border-radius:10px;padding:12px}
   @media(max-width:560px){
     .topnav-in{flex-direction:column;gap:6px;padding:8px 10px}
     .brand-sm{font-size:16px}
@@ -253,6 +262,7 @@
       <button class="tab active" id="tabFree">Ask — free</button>
       <button class="tab premium" id="tabPrem">Full EOC review — Premium</button>
       <button class="tab expert" id="tabExpert">Talk to an expert</button>
+      <button class="tab" id="tabBuy">Pricing</button>
     </div>
   </div>
 </div>
@@ -314,6 +324,11 @@
       <button class="go" id="expertBtn">Request meeting</button>
       <div id="expertNote" class="expert-note"></div>
     </div>
+  </div>
+
+  <div id="pricingView" hidden>
+    <div class="prem-intro">Choose what you need. Secure payment by credit card, Bit, Apple/Google&nbsp;Pay or PayPal via <b>Grow</b>. All prices include VAT. By purchasing you accept our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
+    <div class="pricing-grid" id="pricingGrid"></div>
   </div>
 </div>
 
@@ -582,17 +597,37 @@ function showTab(which){
   $('#tabFree').classList.toggle('active', which==='free');
   $('#tabPrem').classList.toggle('active', which==='premium');
   $('#tabExpert').classList.toggle('active', which==='expert');
+  $('#tabBuy').classList.toggle('active', which==='pricing');
   $('#freeView').hidden = which!=='free';
   $('#premiumView').hidden = which!=='premium';
   $('#expertView').hidden = which!=='expert';
+  $('#pricingView').hidden = which!=='pricing';
+  if(which==='pricing') renderPricing();
 }
 $('#tabFree').onclick=()=>showTab('free');
 $('#tabPrem').onclick=()=>showTab('premium');
 $('#tabExpert').onclick=()=>showTab('expert');
+$('#tabBuy').onclick=()=>showTab('pricing');
 
 // ---- billing (Grow) helpers ----
 let ME = { billing:false, pricing:{}, entitlements:{} };
-async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok){ ME=await r.json(); const fl=$('#freeLimitN'); if(fl && ME.freeLimit) fl.textContent=ME.freeLimit; } }catch{} }
+async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok){ ME=await r.json(); const fl=$('#freeLimitN'); if(fl && ME.freeLimit) fl.textContent=ME.freeLimit; if(!$('#pricingView').hidden) renderPricing(); } }catch{} }
+function renderPricing(){
+  const p=(ME&&ME.pricing)||{}; const pack=p.questionsPack||'';
+  const cur=(n)=> n ? `₪${n}` : '—';
+  const cards=[
+    {kind:'questions', name:`${pack?pack+' ':''}more questions`, desc:'A pack of extra questions added to your account.', price:p.questions},
+    {kind:'subscription', name:'Monthly — unlimited questions', desc:'Ask as many questions as you like for 30 days.', price:p.subscription, suffix:' /mo'},
+    {kind:'review', name:'Full EOC Review', desc:'Line-by-line review of one uploaded EOC — what the IB will expect, per clause.', price:p.review},
+    {kind:'consult', name:'Expert Consultation', desc:'A 30-minute online meeting with an ITL specialist.', price:p.consult},
+  ];
+  $('#pricingGrid').innerHTML = cards.map(c=>`<div class="price-card">
+    <div class="pc-name">${esc(c.name)}</div>
+    <div class="pc-price">${cur(c.price)}${(c.suffix&&c.price)?`<span>${esc(c.suffix)}</span>`:''}</div>
+    <div class="pc-desc">${esc(c.desc)}</div>
+    <button class="go pay" onclick="goCheckout('${c.kind}')">Buy</button>
+  </div>`).join('') + (ME.billing?'':`<div class="pc-note">Online checkout is being finalized — purchasing will be enabled shortly.</div>`);
+}
 function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kind]}` : ''; }
 function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
 // Checkout requires accepting the Purchasing Policy first (a checkbox with a link to it).
