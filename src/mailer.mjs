@@ -23,6 +23,14 @@ const getTransport = () => (transport ||= nodemailer.createTransport({
   host: HOST, port: PORT, secure: PORT === 465, auth: USER ? { user: USER, pass: PASS } : undefined,
 }));
 
+/** mailDiag(): check whether SMTP is configured and the login actually works (no email sent). */
+export async function mailDiag() {
+  const cfg = { available: mailAvailable(), host: HOST || '(unset)', port: PORT, user: USER || '(unset)', from: FROM || '(unset)', notify: BUG_NOTIFY, passSet: !!PASS, passLen: (PASS || '').length };
+  if (!mailAvailable()) return { ...cfg, ok: false, error: 'SMTP not configured — SMTP_HOST / SMTP_USER missing on the server.' };
+  try { await getTransport().verify(); return { ...cfg, ok: true, error: null }; }
+  catch (e) { return { ...cfg, ok: false, error: String(e?.message || e).slice(0, 400) }; }
+}
+
 /**
  * sendReviewEmail({ to, type, scoreboard, attachment, filename }) -> boolean
  * Emails the client their review summary + the annotated workbook. Never throws into the

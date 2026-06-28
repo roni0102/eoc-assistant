@@ -17,7 +17,7 @@ import { composeAnswer } from './answer.mjs';
 import { answerWithLLM, translate, LANG_NAMES, llmAvailable, MODEL } from './llm.mjs';
 import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
-import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail } from './mailer.mjs';
+import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail, mailDiag } from './mailer.mjs';
 import * as qalog from './qalog.mjs';
 import * as leads from './leads.mjs';
 import * as billing from './billing.mjs';
@@ -184,6 +184,9 @@ app.post('/bug', rateLimit, uploadMedia.single('file'), (req, res) => {
   if (mailAvailable()) sendBugEmail({ bug: r.entry, file }).catch(() => {});
   res.json({ ok: true });
 });
+
+// TEMP diagnostic: verify the SMTP login works (no email is sent). Remove after setup.
+app.get('/maildiag', rateLimit, async (_req, res) => { res.json(await mailDiag()); });
 
 // Start a payment: returns a hosted-checkout URL the browser redirects to.
 app.post('/checkout', rateLimit, requireGate, async (req, res) => {

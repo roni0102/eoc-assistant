@@ -114,6 +114,17 @@
   .disclaimer{max-width:660px;margin:14px auto 0;background:#fbfcfe;border:1px solid var(--line);
     border-radius:12px;padding:10px 16px;font-size:11px;color:var(--muted);line-height:1.5}
   .disclaimer b{color:var(--brand-dark)}
+  /* collapsible instruction/notes dropdown */
+  details.info{margin:14px 0 0}
+  details.info.narrow{max-width:660px;margin-left:auto;margin-right:auto}
+  details.info>summary{cursor:pointer;list-style:none;user-select:none;display:flex;align-items:center;gap:8px;
+    font-size:13px;font-weight:600;color:var(--muted);background:var(--card);border:1px solid var(--line);
+    border-radius:10px;padding:9px 14px}
+  details.info>summary::-webkit-details-marker{display:none}
+  details.info>summary::after{content:'▾';margin-inline-start:auto;font-size:11px;transition:transform .2s}
+  details.info[open]>summary::after{transform:rotate(180deg)}
+  details.info>summary:hover{border-color:var(--brand);color:var(--brand)}
+  details.info .disclaimer,details.info .prem-intro{margin-top:8px;max-width:none}
   body.gated{overflow:hidden}
   /* top navigation bar */
   .topnav{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line)}
@@ -358,6 +369,8 @@
     </div>
     <div id="askFileList" class="filechips"></div>
     <div class="hint">Ask a question, then keep the conversation going with follow-ups. Answers are generic and anonymous. Attach a drawing or PDF to ask about it.</div>
+    <details class="info narrow">
+      <summary>ℹ️ Instructions · הוראות שימוש</summary>
     <div class="disclaimer">
       <div>
         <b>Reference guidance only.</b> Past accepted replies <b>do not guarantee</b> the same response from the Inspection Body (IB) or ITL — every submission is assessed on its own merits.
@@ -370,6 +383,7 @@
         השאלות והאינטראקציות שלכם נשמרות ומשמשות <b>באופן אנונימי</b> ללמידת מכונה ושיפור יכולת תגובה, ועשויות להיות מוצגות <b>באופן אנונימי</b> ללקוחות אחרים — מבלי לחשוף אתכם, את החברה, האתר או הפרויקט שלכם.
       </div>
     </div>
+    </details>
     <div class="chips" id="chips"></div>
     <div id="results"></div>
     <details class="shared" id="sharedQA">
@@ -380,10 +394,13 @@
   </div>
 
   <div id="premiumView" hidden>
+    <details class="info">
+      <summary>ℹ️ Instructions · הוראות שימוש</summary>
     <div class="prem-intro">
       <div>Fill in your EOC with your reply on every line, upload it (.xlsx), and get back — line by line — <b>what the IB/ITL will expect</b> for each clause and how your written reply looks: a readiness signal, the expected documents/tests/drawings, and a suggested fix. You get a colour-coded annotated workbook to download <b>and a copy by email</b>. You can optionally attach up to 5 supporting files (drawings/docs) for the review to look at — anything you don't attach, it can't see — and your files are processed in memory only, never stored.</div>
       <div class="bi-he">מלאו את ה-EOC עם התשובה שלכם בכל שורה, העלו אותו (.xlsx), וקבלו בחזרה — שורה אחר שורה — <b>מה גוף הבדיקה (IB/ITL) יצפה לו</b> בכל סעיף ואיך התשובה הכתובה שלכם נראית: חיווי מוכנוּת, המסמכים/בדיקות/שרטוטים הצפויים, והצעה לתיקון. תקבלו קובץ מוער בקידוד צבעים להורדה <b>וגם עותק במייל</b>. ניתן לצרף עד 5 קבצים תומכים (שרטוטים/מסמכים) שהבדיקה תוכל לראות — מה שלא תצרפו, היא לא תראה — והקבצים מעובדים בזיכרון בלבד ואינם נשמרים.</div>
     </div>
+    </details>
     <div class="prem-type">
       <span class="pt-label">I'm reviewing an EOC for:</span>
       <button class="ptbtn active" id="ptPiping" data-t="Piping">Piping — Chapter 7</button>
