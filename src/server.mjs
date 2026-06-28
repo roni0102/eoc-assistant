@@ -300,7 +300,7 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
   if (billed) {
     const ent = billing.entitlements(revEmail);
     subCovered = !!ent.subActive; // membership includes the full EOC review
-    if (!subCovered && ent.reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A one-time EOC review (₪87) or a monthly membership (₪57) is required.' });
+    if (!subCovered && ent.reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A one-time EOC review (₪87) or a monthly membership (₪97) is required.' });
   } else {
     const gate = premiumOk(req);
     if (!gate.ok) return res.status(402).json({ error: 'Premium feature — a valid license key is required.' });

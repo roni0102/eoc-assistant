@@ -34,7 +34,7 @@ const QUESTIONS_PER_PACK = Number(process.env.GROW_QUESTIONS_PER_PACK || 1); // 
 const PRICE = {
   review: Number(process.env.GROW_PRICE_REVIEW || 87),       // one-time full EOC review (no membership)
   consult: Number(process.env.GROW_PRICE_CONSULT || 570),    // 30-minute expert meeting
-  subscription: Number(process.env.GROW_PRICE_SUB || 57),    // monthly membership
+  subscription: Number(process.env.GROW_PRICE_SUB || 97),    // monthly membership
   questions: Number(process.env.GROW_PRICE_QUESTIONS || 5),  // per single question
 };
 const DESC = {
