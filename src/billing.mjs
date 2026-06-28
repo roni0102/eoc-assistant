@@ -43,7 +43,15 @@ const DESC = {
   subscription: 'EOC Assistant — monthly membership: unlimited questions + full EOC review',
   questions: QUESTIONS_PER_PACK === 1 ? 'EOC Assistant — 1 more question' : `EOC Assistant — ${QUESTIONS_PER_PACK} more questions`,
 };
-export const pricing = () => ({ ...PRICE, questionsPack: QUESTIONS_PER_PACK, currency: 'ILS', enabled: billingAvailable() });
+// VAT (Israel, 18% as of 2025). Prices above are ex-VAT; the customer is charged inclusive of VAT.
+const VAT_RATE = Number(process.env.VAT_RATE || 0.18);
+export const withVat = (n) => Math.round((Number(n) || 0) * (1 + VAT_RATE) * 100) / 100;
+export const pricing = () => ({
+  ...PRICE,
+  incl: Object.fromEntries(Object.entries(PRICE).map(([k, v]) => [k, withVat(v)])), // VAT-inclusive prices to display
+  vatRate: VAT_RATE,
+  questionsPack: QUESTIONS_PER_PACK, currency: 'ILS', enabled: billingAvailable(),
+});
 const MONTH_MS = 31 * 24 * 3600 * 1000;
 
 // ---- Entitlements store (per email) — provider-agnostic, persisted to disk ---------------
@@ -92,9 +100,12 @@ export function grant(email, kind) {
 // NOTE: implemented to Grow's documented "Light" server API. The exact field names / status
 // codes / recurring params MUST be confirmed against your Grow developer docs + sandbox once
 // the account is approved (search "VERIFY" here and in GROW_SETUP.md).
-async function growCreatePayment({ kind, email, origin }) {
-  const sum = PRICE[kind];
-  if (!DESC[kind] || !sum) { const e = new Error('Product not configured (price/kind).'); e.code = 'BAD_KIND'; throw e; }
+async function growCreatePayment({ kind, email, origin, customer }) {
+  const base = PRICE[kind];
+  if (!DESC[kind] || !base) { const e = new Error('Product not configured (price/kind).'); e.code = 'BAD_KIND'; throw e; }
+  const sum = withVat(base); // charge the customer VAT-inclusive
+  const c = customer || {};
+  const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ').slice(0, 80);
   const callbackBase = process.env.BASE_URL || origin;
   const body = new URLSearchParams({
     pageCode: GROW.pageCode,
@@ -104,7 +115,11 @@ async function growCreatePayment({ kind, email, origin }) {
     successUrl: `${origin}/?paid=${kind}`,
     cancelUrl: `${origin}/?canceled=1`,
     cgUrl: `${callbackBase}/pay/callback`, // server-to-server confirmation
+    // Prefill the customer's details on Grow's hosted page (VERIFY exact field names vs Grow docs).
     'pageField[email]': key(email),
+    ...(fullName ? { 'pageField[fullName]': fullName } : {}),
+    ...(c.phone ? { 'pageField[phone]': String(c.phone).slice(0, 20) } : {}),
+    ...(c.country ? { 'pageField[country]': String(c.country).slice(0, 40) } : {}),
     cField1: key(email), // we read these back on the callback to know who paid for what
     cField2: kind,
   });
@@ -121,9 +136,9 @@ async function growCreatePayment({ kind, email, origin }) {
 }
 
 /** Create a hosted-payment redirect URL for a product. kind ∈ review|consult|subscription. */
-export async function createCheckout({ kind, email, origin }) {
+export async function createCheckout({ kind, email, origin, customer }) {
   if (!billingAvailable()) { const e = new Error('Billing is not connected yet.'); e.code = 'NO_BILLING'; throw e; }
-  return growCreatePayment({ kind, email, origin });
+  return growCreatePayment({ kind, email, origin, customer });
 }
 
 /**

@@ -172,14 +172,23 @@
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .toast.err{background:#7c2d12} .toast.info{background:#334155}
   /* footer + policy modal */
-  .site-footer{max-width:920px;margin:28px auto 18px;padding:0 20px;text-align:center;font-size:12px;color:var(--muted)}
+  .site-footer{max-width:920px;margin:34px auto 22px;padding:0 20px;text-align:center;font-size:12px;color:var(--muted)}
   .site-footer a{color:var(--brand);text-decoration:none;font-weight:600} .site-footer a:hover{text-decoration:underline}
-  .site-footer span{margin-left:6px}
+  .foot-links{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
+  .foot-biz{margin-top:10px;line-height:1.7;color:var(--muted)}
+  .foot-biz a{font-weight:600}
+  .foot-copy{margin-top:6px;color:var(--muted)}
   .modal{position:fixed;inset:0;z-index:300;background:rgba(15,37,64,.5);display:flex;align-items:center;justify-content:center;padding:20px}
   .modal[hidden]{display:none}
   .modal-card{background:#fff;border-radius:16px;padding:24px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
   .modal-h{font-size:18px;font-weight:800;margin-bottom:14px;color:var(--ink)}
-  .policy-chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);line-height:1.5;cursor:pointer}
+  .co-summary{font-size:14px;color:var(--ink);background:#f0f6fc;border:1px solid #d6e6f5;border-radius:10px;padding:10px 14px;margin-bottom:14px}
+  body.dark .co-summary{background:#15263a;border-color:#2b4060}
+  .co-summary b{color:var(--brand-dark)}
+  .co-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+  #checkoutModal input,#checkoutModal select{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:14px;font-family:inherit;background:var(--card);color:var(--ink)}
+  #checkoutModal input:focus,#checkoutModal select:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px rgba(11,95,165,.12)}
+  .policy-chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);line-height:1.5;cursor:pointer;margin-top:6px}
   .policy-chk input{margin-top:3px;width:17px;height:17px;flex:none}
   .policy-chk a{color:var(--brand);font-weight:600}
   .modal-actions{display:flex;gap:10px;margin-top:20px}
@@ -223,6 +232,7 @@
   .pc-name{font-size:15px;font-weight:700;color:var(--ink)}
   .pc-price{font-size:28px;font-weight:800;color:var(--brand-dark);margin:8px 0 2px}
   .pc-vat{font-size:12px;font-weight:600;color:var(--muted);margin-inline-start:6px}
+  .pc-exvat{font-size:12px;color:var(--muted);margin:-2px 0 6px}
   .pc-price span{font-size:14px;font-weight:600;color:var(--muted)}
   .pc-desc{font-size:13px;color:var(--muted);line-height:1.5;flex:1;margin-bottom:14px}
   .price-card .go{width:100%}
@@ -457,10 +467,14 @@
 </div>
 
 <footer class="site-footer">
-  <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>
-  <span>·</span> <a href="#" id="bugLink">Report a bug</a>
-  <span>· © RK Bold Finance Ltd ·</span>
-  <a href="#" id="adminLink">Admin</a>
+  <div class="foot-links">
+    <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>
+    <span>·</span> <a href="/accessibility" target="_blank" rel="noopener">הצהרת נגישות</a>
+    <span>·</span> <a href="/contact" target="_blank" rel="noopener">פרטי התקשרות · Contact</a>
+    <span>·</span> <a href="#" id="bugLink">Report a bug</a>
+  </div>
+  <div class="foot-biz" dir="rtl">RK&nbsp;Bold&nbsp;Finance&nbsp;Ltd · ח.פ. 516399219 · שדרות הרצל 48, אשדוד · <a href="tel:+972546860421">054-6860421</a> · <a href="mailto:roni@rkbf.pro">roni@rkbf.pro</a></div>
+  <div class="foot-copy">© RK Bold Finance Ltd</div>
 </footer>
 
 <div id="upgradeModal" class="modal" hidden>
@@ -494,14 +508,29 @@
   </div>
 </div>
 
-<div id="policyModal" class="modal" hidden>
+<div id="checkoutModal" class="modal" hidden>
   <div class="modal-card">
-    <div class="modal-h">Before payment</div>
-    <label class="policy-chk"><input type="checkbox" id="policyChk" />
+    <div class="modal-h">Checkout</div>
+    <div id="coSummary" class="co-summary"></div>
+    <div class="co-grid">
+      <input id="coFirst" type="text" placeholder="First name" autocomplete="given-name" />
+      <input id="coLast" type="text" placeholder="Last name" autocomplete="family-name" />
+      <input id="coPhone" type="tel" inputmode="numeric" placeholder="Phone (digits only, no prefix)" autocomplete="tel" />
+      <select id="coCountry" autocomplete="country">
+        <option value="">Country…</option>
+        <option value="Israel">Israel</option>
+        <option value="United States">United States</option>
+        <option value="United Kingdom">United Kingdom</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <input id="coEmail" type="email" placeholder="Email" autocomplete="email" style="width:100%;margin-bottom:10px" />
+    <label class="policy-chk"><input type="checkbox" id="coTerms" />
       <span>I have read and accept the <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</span></label>
+    <div id="coNote" class="expert-note" style="margin-top:8px"></div>
     <div class="modal-actions">
-      <button class="go" id="policyContinue" disabled>Continue to payment</button>
-      <button class="ghost" id="policyCancel">Cancel</button>
+      <button class="go" id="coContinue">Continue to payment</button>
+      <button class="ghost" id="coCancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -809,8 +838,8 @@ async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session'
 let pricingLang = 'he'; // Hebrew is the default on the pricing tab
 const PRICING_I18N = {
   en: {
-    intro:'Choose what you need. Secure payment by credit card, Bit, Apple/Google&nbsp;Pay or PayPal via <b>Grow</b>. All prices are shown <b>excluding VAT</b> — VAT (18%) is added at checkout. By purchasing you accept our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.',
-    vat:'+ VAT', buy:'Buy', best:'★ Best value', soon:'Online checkout is being finalized — purchasing will be enabled shortly.',
+    intro:'Choose what you need. Secure payment by credit card, Bit, Apple/Google&nbsp;Pay or PayPal via <b>Grow</b>. Prices shown <b>include VAT (18%)</b>. By purchasing you accept our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.',
+    vat:'incl. VAT', exvat:'ex. VAT', buy:'Buy', best:'★ Best value', soon:'Online checkout is being finalized — purchasing will be enabled shortly.',
     cards:{
       subscription:{name:'Monthly membership', desc:'Unlimited questions + the full EOC review included, for 30 days. Plus a quarterly member newsletter with updates and a digest of tricky new questions. Best value.', suffix:' /mo'},
       questions:{name:'Per question', desc:'Pay for one question at a time. Does not include the full EOC review.', suffix:' /question'},
@@ -819,8 +848,8 @@ const PRICING_I18N = {
     },
   },
   he: {
-    intro:'בחרו את מה שמתאים לכם. תשלום מאובטח בכרטיס אשראי, Bit, Apple/Google&nbsp;Pay או PayPal דרך <b>Grow</b>. כל המחירים מוצגים <b>ללא מע״מ</b> — מע״מ (18%) יתווסף בעת התשלום. ברכישה אתם מאשרים את <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">מדיניות הרכישה והתנאים</a>.',
-    vat:'+ מע״מ', buy:'לרכישה', best:'★ המשתלם ביותר', soon:'התשלום המקוון בהשלמה — הרכישה תיפתח בקרוב.',
+    intro:'בחרו את מה שמתאים לכם. תשלום מאובטח בכרטיס אשראי, Bit, Apple/Google&nbsp;Pay או PayPal דרך <b>Grow</b>. כל המחירים מוצגים <b>כולל מע״מ (18%)</b>. ברכישה אתם מאשרים את <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">מדיניות הרכישה והתנאים</a>.',
+    vat:'כולל מע״מ', exvat:'לפני מע״מ', buy:'לרכישה', best:'★ המשתלם ביותר', soon:'התשלום המקוון בהשלמה — הרכישה תיפתח בקרוב.',
     cards:{
       subscription:{name:'מנוי חודשי', desc:'שאלות ללא הגבלה + בדיקת EOC מלאה כלולה, ל-30 יום. כולל גם ניוזלטר רבעוני לחברים עם עדכונים ותקציר של שאלות מורכבות חדשות. המשתלם ביותר.', suffix:' לחודש'},
       questions:{name:'לפי שאלה', desc:'תשלום עבור שאלה אחת בכל פעם. אינו כולל בדיקת EOC מלאה.', suffix:' לשאלה'},
@@ -836,16 +865,17 @@ function renderPricing(){
   $('#pricingLangToggle').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.pl===pricingLang));
   $('#pricingIntro').innerHTML = t.intro;
   const order=['subscription','questions','review','consult'];
-  $('#pricingGrid').innerHTML = order.map(kind=>{ const c=t.cards[kind]; const price=p[kind]; const best=kind==='subscription';
+  $('#pricingGrid').innerHTML = order.map(kind=>{ const c=t.cards[kind]; const ex=p[kind]; const incl=(p.incl&&p.incl[kind])||ex; const best=kind==='subscription';
     return `<div class="price-card${best?' best':''}">
     ${best?`<div class="pc-badge">${esc(t.best)}</div>`:''}
     <div class="pc-name">${esc(c.name)}</div>
-    <div class="pc-price">${cur(price)}${(c.suffix&&price)?`<span>${esc(c.suffix)}</span>`:''}${price?`<span class="pc-vat">${esc(t.vat)}</span>`:''}</div>
+    <div class="pc-price">${cur(incl)}${(c.suffix&&incl)?`<span>${esc(c.suffix)}</span>`:''}${incl?`<span class="pc-vat">${esc(t.vat)}</span>`:''}</div>
+    ${ex?`<div class="pc-exvat">₪${ex} ${esc(t.exvat)}</div>`:''}
     <div class="pc-desc">${esc(c.desc)}</div>
     <button class="go pay" onclick="goCheckout('${kind}')">${esc(t.buy)}</button>
   </div>`; }).join('') + (ME.billing?'':`<div class="pc-note">${esc(t.soon)}</div>`);
 }
-function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kind]}` : ''; }
+function price(kind){ const p=(ME&&ME.pricing)||{}; const v=(p.incl&&p.incl[kind])||p[kind]; return v ? `₪${v}` : ''; } // VAT-inclusive
 function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
 // Upgrade upsell popup — shown when a free user hits the free-question cap ('cap') or tries to
 // attach more than one file ('files'). Advertises the premium benefits and routes to checkout.
@@ -878,7 +908,9 @@ async function adminUnlock(){
     else toast(d.error || 'Incorrect admin key.','err');
   }catch(e){ toast('Could not reach the server — try again.','err'); }
 }
-$('#adminLink').onclick=(e)=>{ e.preventDefault(); adminUnlock(); };
+// Admin unlock is NOT a public link — reach it discreetly via the URL hash #admin (then enter the key).
+if(location.hash==='#admin') adminUnlock();
+window.addEventListener('hashchange',()=>{ if(location.hash==='#admin') adminUnlock(); });
 // ---- bug report ----
 let bugFileObj=null;
 function resetBugFile(){ bugFileObj=null; $('#bugFile').value=''; $('#bugFileLabel').textContent='Attach a screenshot or file (optional — image or PDF)'; $('#bugFileBtn').classList.remove('has'); }
@@ -906,25 +938,41 @@ $('#bugSend').onclick=async ()=>{
 };
 $('#upgradeCancel').onclick = closeUpgrade;
 $('#upgradeModal').addEventListener('click', (e)=>{ if(e.target.id==='upgradeModal') closeUpgrade(); });
-// Checkout requires accepting the Purchasing Policy first (a checkbox with a link to it).
-let pendingKind=null;
+// Checkout: collect the customer's details + a mandatory terms acceptance, then start payment.
+const CO_NAMES={subscription:'Monthly membership',questions:'Per question',review:'Full EOC Review',consult:'Talk to an expert'};
+let coKind=null;
 function goCheckout(kind){
-  if(!ME.billing){ toast('Online checkout will be available as soon as our payment provider is connected — coming soon.','info'); return; }
-  pendingKind=kind; $('#policyChk').checked=false; $('#policyContinue').disabled=true; $('#policyModal').hidden=false;
+  coKind=kind;
+  const p=(ME&&ME.pricing)||{}; const incl=(p.incl&&p.incl[kind]); const ex=p[kind];
+  $('#coSummary').innerHTML = `<b>${esc(CO_NAMES[kind]||kind)}</b> — ₪${incl||ex} incl. VAT${ex?` <span class="muted">(₪${ex} + VAT)</span>`:''}`;
+  ['coFirst','coLast','coPhone','coCountry'].forEach(id=>{ const el=$('#'+id); if(el) el.value=''; });
+  $('#coEmail').value=(ME&&ME.email)||'';
+  $('#coTerms').checked=false; $('#coNote').textContent=''; $('#coNote').className='expert-note';
+  $('#checkoutModal').hidden=false; $('#coFirst').focus();
 }
-$('#policyChk').onchange=()=>{ $('#policyContinue').disabled=!$('#policyChk').checked; };
-$('#policyCancel').onclick=()=>{ $('#policyModal').hidden=true; pendingKind=null; };
-$('#policyModal').addEventListener('click',e=>{ if(e.target.id==='policyModal'){ $('#policyModal').hidden=true; pendingKind=null; } });
-$('#policyContinue').onclick=()=>{ if(!$('#policyChk').checked||!pendingKind) return; const k=pendingKind; pendingKind=null; $('#policyModal').hidden=true; doCheckout(k); };
-async function doCheckout(kind){
+function closeCheckout(){ $('#checkoutModal').hidden=true; coKind=null; }
+$('#coCancel').onclick=closeCheckout;
+$('#checkoutModal').addEventListener('click',e=>{ if(e.target.id==='checkoutModal') closeCheckout(); });
+$('#coContinue').onclick=async ()=>{
+  if(!coKind) return;
+  const note=$('#coNote'); const fail=(m)=>{ note.className='expert-note err'; note.textContent=m; };
+  const customer={ firstName:$('#coFirst').value.trim(), lastName:$('#coLast').value.trim(),
+    phone:$('#coPhone').value.replace(/[^\d]/g,''), country:$('#coCountry').value, email:$('#coEmail').value.trim() };
+  if(!customer.firstName||!customer.lastName) return fail('Please enter your first and last name.');
+  if(customer.phone.length<7) return fail('Please enter a valid phone number (digits only).');
+  if(!customer.country) return fail('Please select your country.');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(customer.email)) return fail('Please enter a valid email.');
+  if(!$('#coTerms').checked) return fail('Please accept the Purchasing Policy & Terms to continue.');
+  const btn=$('#coContinue'); const old=btn.textContent; btn.disabled=true; btn.textContent='…'; note.className='expert-note'; note.textContent='';
   try{
-    const r=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({kind, policy:true})});
+    const r=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({kind:coKind, policy:true, customer})});
     const d=await r.json().catch(()=>({}));
-    if(r.status===401 && d.gate){ openGate(); return; }
-    if(!r.ok || !d.url){ toast(d.error||'Payments are not available right now.','err'); return; }
-    window.location.href=d.url; // → Grow hosted checkout
-  }catch(e){ toast('Could not start payment. Please try again.','err'); }
-}
+    if(r.status===401 && d.gate){ closeCheckout(); openGate(); return; }
+    if(r.ok && d.url){ window.location.href=d.url; return; } // → Grow hosted checkout
+    fail(d.error||'Payments are not available right now.');
+  }catch(e){ fail('Could not start payment. Please try again.'); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+};
 function toast(msg, kind){
   const t=document.createElement('div'); t.className='toast '+(kind||'ok'); t.textContent=msg; document.body.appendChild(t);
   requestAnimationFrame(()=>t.classList.add('show'));

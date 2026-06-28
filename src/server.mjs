@@ -106,6 +106,16 @@ function logQuery(meta) {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, lines: loadKB().items.length }));
 
+// Legal / contact pages (clean URLs) + the Purchasing Policy served explicitly as a real file,
+// so the links work even behind a custom domain / proxy (never caught by any SPA fallback).
+app.get('/accessibility', (_req, res) => res.sendFile(path.join(PUBLIC, 'accessibility.html')));
+app.get('/contact', (_req, res) => res.sendFile(path.join(PUBLIC, 'contact.html')));
+app.get(['/purchasing-policy.pdf', '/terms'], (_req, res) => {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline; filename="purchasing-policy.pdf"');
+  res.sendFile(path.join(PUBLIC, 'purchasing-policy.pdf'));
+});
+
 // Validate a stored session token on page load (so the gate shows up front, not mid-query).
 app.get('/session', requireGate, (_req, res) => res.json({ ok: true }));
 
@@ -157,7 +167,7 @@ app.post('/translate', rateLimit, requireGate, async (req, res) => {
 app.get('/me', requireGate, (req, res) => {
   const email = leads.emailForToken(req.sessionToken);
   const ent = billing.entitlements(email);
-  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, freeLimit: leads.freeLimit() });
+  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, email: email || '', freeLimit: leads.freeLimit() });
 });
 
 // Admin/owner unlock: a correct ADMIN_KEY (env only) grants this email unlimited questions +
@@ -190,12 +200,25 @@ app.post('/checkout', rateLimit, requireGate, async (req, res) => {
   const kind = String(req.body?.kind || '').trim();
   if (!['review', 'consult', 'subscription', 'questions'].includes(kind)) return res.status(400).json({ error: 'Unknown product.' });
   if (req.body?.policy !== true) return res.status(400).json({ error: 'Please accept the Purchasing Policy & Terms to continue.' });
-  // Audit the policy acceptance, linked to the client's email, to leads.jsonl + the Google Sheet.
-  leads.recordConsent(req.sessionToken, `checkout: ${kind}`);
-  const email = leads.emailForToken(req.sessionToken);
+  // Customer details collected before payment (Israeli consumer-protection requirement).
+  const cu = req.body?.customer || {};
+  const customer = {
+    firstName: String(cu.firstName || '').slice(0, 40).trim(),
+    lastName: String(cu.lastName || '').slice(0, 40).trim(),
+    phone: String(cu.phone || '').replace(/[^\d]/g, '').slice(0, 15),
+    country: String(cu.country || '').slice(0, 40).trim(),
+    email: String(cu.email || '').slice(0, 160).trim() || leads.emailForToken(req.sessionToken),
+  };
+  if (!customer.firstName || !customer.lastName) return res.status(400).json({ error: 'Please enter your first and last name.' });
+  if (customer.phone.length < 7) return res.status(400).json({ error: 'Please enter a valid phone number.' });
+  if (!customer.country) return res.status(400).json({ error: 'Please select your country.' });
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(customer.email)) return res.status(400).json({ error: 'Please enter a valid email.' });
+  // Audit the policy acceptance + details, linked to the client's email, to leads.jsonl + the Sheet.
+  leads.recordConsent(req.sessionToken, `checkout: ${kind} · ${customer.firstName} ${customer.lastName} · ${customer.phone} · ${customer.country}`);
+  const email = customer.email;
   const origin = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   try {
-    const { url } = await billing.createCheckout({ kind, email, origin });
+    const { url } = await billing.createCheckout({ kind, email, origin, customer });
     res.json({ url });
   } catch (e) {
     if (e.code === 'NO_BILLING') return res.status(503).json({ error: 'Payments are not connected yet — please check back soon.' });
