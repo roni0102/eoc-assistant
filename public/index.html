@@ -631,7 +631,10 @@ function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kin
 function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
 // Checkout requires accepting the Purchasing Policy first (a checkbox with a link to it).
 let pendingKind=null;
-function goCheckout(kind){ pendingKind=kind; $('#policyChk').checked=false; $('#policyContinue').disabled=true; $('#policyModal').hidden=false; }
+function goCheckout(kind){
+  if(!ME.billing){ toast('Online checkout will be available as soon as our payment provider is connected — coming soon.','info'); return; }
+  pendingKind=kind; $('#policyChk').checked=false; $('#policyContinue').disabled=true; $('#policyModal').hidden=false;
+}
 $('#policyChk').onchange=()=>{ $('#policyContinue').disabled=!$('#policyChk').checked; };
 $('#policyCancel').onclick=()=>{ $('#policyModal').hidden=true; pendingKind=null; };
 $('#policyModal').addEventListener('click',e=>{ if(e.target.id==='policyModal'){ $('#policyModal').hidden=true; pendingKind=null; } });
