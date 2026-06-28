@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const KB_PATH = path.resolve(__dirname, '..', 'data', 'kb.json');
+const KB_PATH = process.env.EOC_KB_PATH || path.resolve(__dirname, '..', 'data', 'kb.json'); // EOC_KB_PATH = hold-out KB (eval harness)
 
 let KB = null;
 export function loadKB() {

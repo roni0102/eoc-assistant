@@ -20,8 +20,10 @@ import { scrubWith, scrub } from './anonymize.mjs';
 import { discoverCompleted, harvestIdentifiers, norm } from './archive.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.resolve(__dirname, '..', 'data', 'kb.json');
+const OUT = process.env.EOC_KB_OUT || path.resolve(__dirname, '..', 'data', 'kb.json');
 const LIMIT = process.argv[2] ? parseInt(process.argv[2], 10) : undefined;
+// Hold-out for the eval harness: comma/pipe-separated project folder names to EXCLUDE from the build.
+const EXCLUDE = new Set((process.env.EXCLUDE_PROJECTS || '').split(/[|,]/).map((s) => s.trim()).filter(Boolean));
 
 // --- clustering (shared with the pattern aggregation) ---------------------------
 const toks = (s) => new Set(norm(s).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter((w) => w.length > 1));
@@ -160,7 +162,8 @@ function repRequirement(reps) {
 
 // --- orchestrate ----------------------------------------------------------------
 function main() {
-  const picks = discoverCompleted({ limit: LIMIT });
+  let picks = discoverCompleted({ limit: LIMIT });
+  if (EXCLUDE.size) { picks = picks.filter((p) => !EXCLUDE.has(p.project)); console.log(`Hold-out: excluded ${[...EXCLUDE].join(', ')}`); }
   const projects = new Set(picks.map((p) => p.project));
   console.log(`Discovered ${picks.length} latest-rev EOC files across ${projects.size} completed projects.`);
 

@@ -12,37 +12,36 @@
 // their own submission, so their own document names legitimately appear (not scrubbed).
 import Anthropic from '@anthropic-ai/sdk';
 import { getClause, retrieveStandard } from './retrieve.mjs';
+import { ruleHint } from './rulesets.mjs';
 
 const MODEL = process.env.EOC_MODEL || 'claude-opus-4-8';
 let client = null;
 const getClient = () => (client ||= new Anthropic());
 
-const SYSTEM = `You are a senior inspector at ITL, an accredited Inspection Body (IB) under Israeli Standard SI 6464 (2017), helping a client PREPARE their EOC (Evaluation of Conformity) before they submit it.
+const SYSTEM = `You are a senior inspector at ITL, an accredited Inspection Body (IB) under Israeli Standard SI 6464 (2017), helping a client PREPARE their EOC before submission.
 
-CRITICAL LIMITATION: you can see ONLY the client's typed reply for each line. You CANNOT see the attached documents, drawings, certificates, calculations or test reports themselves. So you must NOT certify that the evidence is compliant. Your job for each row is to tell the client:
-(a) WHAT THE IB/ITL WILL EXPECT for this clause — the specific documents, drawings, tests, calculations and certifications an inspector looks for; and
-(b) whether their typed reply looks complete and clear, or thin/ambiguous and likely to draw an IB comment.
+CRITICAL LIMITATION: you see ONLY the client's typed reply per line — NOT the attached documents/drawings/certificates/calculations. Do NOT certify evidence. For each row tell the client (a) WHAT THE IB/ITL WILL EXPECT (the specific documents, drawings, tests, calculations, certifications) and (b) whether the typed reply is complete and clear, or thin/vague and likely to draw a comment.
 
-For each row you get: the SI 6464 clause, its requirement, and the client's typed answer; plus grounding — the SI 6464 standard text (authoritative for the requirement) and the anonymized history of how this clause was resolved across many past EOCs (the IB comments commonly raised and what closed the item).
+Per row you get: the SI 6464 clause, its requirement, the client's typed answer; grounding (the SI 6464 standard text + the anonymized history of how this clause was resolved); and — when the clause is recognised — a SEVERITY tag and a CANONICAL IB REQUEST.
 
-Judge each row's READINESS (NOT a pass/fail of evidence you cannot see):
-- READY — the typed reply is complete and clear and names the right kind of evidence; likely accepted IF the actual evidence matches.
-- NEEDS_ATTENTION — the reply is thin, vague, or may not cover what the IB expects; likely to draw a comment.
-- N/A — the requirement genuinely does not apply to this installation.
+DECIDE FOR EVERY ROW whether a comment is warranted, from the EVIDENCE in the reply — NOT from whether a stored example exists. A genuine gap with no prior example must still get the correct standard comment. Classify readiness:
+- READY — the typed reply is complete and clear and NAMES the specific required evidence (an actual certificate/report/drawing/calculation); likely accepted IF the evidence matches.
+- NEEDS_ATTENTION — thin, vague, generic ("see attached", "complies"), or may not cover what the IB expects; will likely draw a comment.
+- N/A — genuinely does not apply.
 - MISSING — no usable reply, or clearly insufficient.
 
-Return STRICT JSON (no prose outside the array), one object per row, with this shape:
-{
- "row": <number>,
- "readiness": "READY" | "NEEDS_ATTENTION" | "N/A" | "MISSING",
- "ib_expectations": "<what the IB/ITL will expect for this clause — the specific documents/drawings/tests/calculations/certifications. ALWAYS fill this; it is the main value of the review.>",
- "reply_assessment": "<short assessment of the client's TYPED reply: is it complete and clear, or what looks thin/ambiguous? Acknowledge you have not seen the attached evidence.>",
- "suggested_fix": "<concrete wording or evidence that would satisfy the IB; empty only if READY.>"
-}
+SAFETY-CRITICAL & STATUTORY ITEMS (severity "safety" or "statutory" — functional safety/SIL, risk assessment, burner/combustion safety, hazardous-area/electrical, pressure-vessel/boiler, electrical-law, fire-service, periodic inspection): these almost ALWAYS carry an IB comment. NEVER mark such an item READY or leave it blank unless the reply explicitly names the specific required evidence. When in doubt → NEEDS_ATTENTION. For these items produce the COMPLETE structured IB request (what to provide AND what to prove), using the CANONICAL IB REQUEST as the basis — never a single status word, never blank.
 
-Rules (formal inspection English, no first person): ALWAYS populate ib_expectations, even when READY. Cite the SI 6464 clause when you state a requirement. Ground ib_expectations and suggested_fix in the standard + corpus history ("the IB commonly asks for…") — do not invent requirements. NEVER name or hint at any other client/site/person/project from the grounding — speak generically.
+LANGUAGE (bilingual, equal weight): write ib_expectations, reply_assessment and suggested_fix in the SAME LANGUAGE as the requirement — Hebrew requirement → Hebrew; English → English. Hebrew items are first-class; never skip a Hebrew item.
 
-Return ONLY a JSON array of one object per input row.`;
+SECTION CONSISTENCY: rows carry a "section". When a requirement is cross-cutting (a shared status or shared demand applies to a block of rows in the same section), apply the comment CONSISTENTLY to every affected row — do not catch some and drop the rest.
+
+Return STRICT JSON (no prose outside the array), one object per row:
+{ "row": <number>, "readiness": "READY"|"NEEDS_ATTENTION"|"N/A"|"MISSING", "ib_expectations": "<always filled; the specific evidence the IB expects>", "reply_assessment": "<short read of the typed reply; acknowledge you haven't seen the attached evidence>", "suggested_fix": "<concrete wording/evidence that would satisfy the IB; empty only if READY>" }
+
+ALWAYS populate ib_expectations (even when READY). Cite the SI 6464 clause when stating a requirement. Ground in the standard + corpus + canonical request — do not invent requirements. NEVER name or hint at any other client/site/person/project — speak generically.
+
+Return ONLY a JSON array, one object per input row.`;
 
 // compact grounding for one clause
 function groundRow(r) {
@@ -52,9 +51,12 @@ function groundRow(r) {
   const acc = (rec?.accepted_reply_patterns || []).slice(0, 3)
     .map((p) => `(${p.frequency}${p.is_dominant ? ', most common' : ''}) ${p.pattern}`);
   const std = retrieveStandard(`${r.clause} ${r.requirement || ''}`, 1).map((s) => s.text.slice(0, 500));
+  const rule = ruleHint(r.clause, r.requirement); // severity + canonical IB request (bilingual)
   return {
-    row: r.row, clause: r.clause, requirement: (r.requirement || '').slice(0, 600),
+    row: r.row, clause: r.clause, section: r.section || '', requirement: (r.requirement || '').slice(0, 600),
     client_answer: (r.client_answer || '').slice(0, 800),
+    severity: rule?.severity || 'standard',
+    canonical_ib_request: rule?.canonical_ib_request || '',
     corpus_accepted: acc, corpus_ib_comments: ib, standard: std[0] || '',
     observed_in_projects: rec?.corpus_count || 0,
   };
@@ -113,36 +115,68 @@ export async function reviewEOC({ type, rows, limit, onProgress }) {
   };
   const scoreKey = { READY: 'READY', NEEDS_ATTENTION: 'NEEDS_ATTENTION', 'N/A': 'N_A', MISSING: 'MISSING' };
 
-  const items = [], updates = [], score = { READY: 0, NEEDS_ATTENTION: 0, N_A: 0, MISSING: 0, total: 0 };
+  const he = (s) => /[֐-׿]/.test(String(s || ''));
+  const looksSpecific = (a) => { const s = String(a || ''); return s.length >= 12 && (/\d/.test(s) || /(cert|certificate|report|drawing|datasheet|p&id|appendix|\brev\b|תעודה|דו"?ח|תרשים|מסמך|נספח|אישור)/i.test(s)); };
+
+  // 1) per-row assessment (LLM for answered rows; canonical request for missing rows), with the
+  //    safety-critical / statutory guardrail (raise recall on high-stakes items, keep precision).
+  const items = [];
   for (const r of rows) {
+    const rule = ruleHint(r.clause, r.requirement);
+    const critical = !!rule && (rule.severity === 'safety' || rule.severity === 'statutory');
+    const inHe = he(r.requirement);
     if (!r.answered) {
-      if (r.requirement && r.clause) {
-        score.MISSING++; score.total++;
-        const exp = 'The IB will expect a documented reply with supporting evidence for this clause.';
-        items.push({ row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, readiness: 'MISSING', ib_expectations: exp, reply_assessment: 'No reply provided for this line.', suggested_fix: 'Provide the required document/evidence and a written reply for this clause.', client_answer: '', observed_in_projects: getClause(r.clause)?.corpus_count || 0 });
-        updates.push({ row: r.row, col_D: `MISSING — ${exp}`, col_E: 'MISSING', next_itl_col: r.next_itl_col, itl_reply: 'Provide the required document/evidence for this clause.' });
-      }
+      if (!r.requirement || !r.clause) continue;
+      const exp = (rule && rule.canonical_ib_request) || (inHe ? 'הגוף הבודק יצפה לתשובה מתועדת עם ראיות תומכות לסעיף זה.' : 'The IB will expect a documented reply with supporting evidence for this clause.');
+      items.push({ row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, next_itl_col: r.next_itl_col, severity: rule?.severity || 'standard', readiness: 'MISSING', ib_expectations: exp, reply_assessment: inHe ? 'לא ניתנה תשובה לשורה זו.' : 'No reply provided for this line.', suggested_fix: inHe ? 'יש להגיש את המסמך/הראיה הנדרשים ותשובה כתובה לסעיף זה.' : 'Provide the required document/evidence and a written reply for this clause.', client_answer: '', observed_in_projects: getClause(r.clause)?.corpus_count || 0 });
       continue;
     }
     const rev = reviews.get(r.row);
     if (!rev) continue;
-    const readiness = normReadiness(rev.readiness);
-    score[scoreKey[readiness]]++; score.total++;
-    const exp = rev.ib_expectations || '';
-    const assess = rev.reply_assessment || '';
-    const fix = rev.suggested_fix || '';
-    items.push({
-      row: r.row, clause: r.clause, section: r.section, requirement: r.requirement,
-      client_answer: r.client_answer || '',
-      readiness, ib_expectations: exp, reply_assessment: assess, suggested_fix: fix,
-      observed_in_projects: getClause(r.clause)?.corpus_count || 0,
-    });
-    // workbook: col D leads with what the IB expects (+ the reply assessment); col E = readiness.
-    const colD = `${LABEL[readiness]} — IB will expect: ${exp}${assess ? ` | Reply: ${assess}` : ''}`;
-    updates.push({ row: r.row, col_D: colD, col_E: LABEL[readiness], next_itl_col: r.next_itl_col, itl_reply: fix || (readiness === 'READY' ? 'Reply looks complete — ensure the named evidence is attached.' : '') });
+    let readiness = normReadiness(rev.readiness);
+    let exp = rev.ib_expectations || '';
+    let fix = rev.suggested_fix || '';
+    if (critical) {
+      if (!exp) exp = rule.canonical_ib_request;
+      // never quietly pass a safety-critical item whose reply doesn't NAME the specific evidence
+      if (readiness === 'READY' && !looksSpecific(r.client_answer)) { readiness = 'NEEDS_ATTENTION'; if (!fix) fix = rule.canonical_ib_request; }
+    }
+    items.push({ row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, next_itl_col: r.next_itl_col, severity: rule?.severity || 'standard', readiness, ib_expectations: exp, reply_assessment: rev.reply_assessment || '', suggested_fix: fix, client_answer: r.client_answer || '', observed_in_projects: getClause(r.clause)?.corpus_count || 0 });
+  }
+
+  // 2) section-level propagation of cross-cutting status across a block of rows.
+  propagateSection(items);
+
+  // 3) scoreboard + workbook updates from the FINAL items.
+  const score = { READY: 0, NEEDS_ATTENTION: 0, N_A: 0, MISSING: 0, total: 0 };
+  const updates = [];
+  for (const it of items) {
+    score[scoreKey[it.readiness]]++; score.total++;
+    const colD = `${LABEL[it.readiness]} — IB will expect: ${it.ib_expectations}${it.reply_assessment ? ` | Reply: ${it.reply_assessment}` : ''}`;
+    updates.push({ row: it.row, col_D: colD, col_E: LABEL[it.readiness], next_itl_col: it.next_itl_col, itl_reply: it.suggested_fix || (it.readiness === 'READY' ? 'Reply looks complete — ensure the named evidence is attached.' : '') });
   }
   items.sort((a, b) => String(a.clause).localeCompare(String(b.clause), undefined, { numeric: true }));
   return { scoreboard: score, items, updates };
+}
+
+// When a block of rows in the SAME section shares the SAME non-empty typed reply (a cross-cutting
+// status/demand), give them ONE consistent assessment — the most severe readiness in the group plus
+// its fullest expectation/fix — so a shared status isn't caught on some rows and dropped on others.
+function propagateSection(items) {
+  const SEV = { MISSING: 3, NEEDS_ATTENTION: 2, READY: 1, 'N/A': 0 };
+  const groups = new Map();
+  for (const it of items) {
+    const ans = String(it.client_answer || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (ans.length < 4) continue; // shared real replies only — never propagate over blanks
+    const key = (it.section || '') + '||' + ans;
+    let arr = groups.get(key); if (!arr) { arr = []; groups.set(key, arr); }
+    arr.push(it);
+  }
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    const rep = g.slice().sort((a, b) => (SEV[b.readiness] - SEV[a.readiness]) || ((b.ib_expectations || '').length - (a.ib_expectations || '').length))[0];
+    for (const it of g) { it.readiness = rep.readiness; it.ib_expectations = rep.ib_expectations; it.suggested_fix = rep.suggested_fix; }
+  }
 }
 
 export { MODEL };
