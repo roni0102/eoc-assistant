@@ -219,6 +219,9 @@
   .vbadge.ready{background:#2f9e44} .vbadge.attention{background:var(--warn)}
   .vbadge.missing{background:var(--risk)} .vbadge.na{background:#94a3b8}
   .rowno{font-size:11px;font-weight:600;color:var(--muted);background:#eef2f7;border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+  .progress{height:12px;background:#e7edf5;border-radius:8px;overflow:hidden;margin:12px 0 6px;max-width:660px}
+  .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,#0b5fa5,#1a7fd4);border-radius:8px;transition:width .3s ease}
+  .progress-txt{font-size:12.5px;color:var(--muted);font-weight:600}
   .rev .req{font-size:13px;color:var(--muted);margin:6px 0}
   .rev .line{font-size:14px;margin-top:7px} .rev .line b{color:var(--brand-dark)}
   .rev .line.exp{background:#f0f6fc;border:1px solid #d6e6f5;border-radius:8px;padding:8px 11px}
@@ -717,6 +720,22 @@ function revCard(it){
   </div>`;
 }
 
+function renderReviewResult(data, out){
+  const s=data.scoreboard||{};
+  const board=`<div class="scoreboard">
+    ${scoreCard(s.READY,'Ready','ready')}
+    ${scoreCard(s.NEEDS_ATTENTION,'Needs attention','attention')}
+    ${scoreCard(s.N_A,'N/A','na')}
+    ${scoreCard(s.MISSING,'Missing','missing')}
+  </div>`;
+  const head=`<div class="meta-sm"><b>${esc(data.type)} EOC</b> · ${data.answered_rows} answered rows · reviewed ${data.reviewed_rows}${data.capped?` (first ${data.cap} — raise the limit for the full audit)`:''}${data.dev_mode?' · dev mode':''}</div>`;
+  const mism = data.type_mismatch ? `<div class="warn">Heads-up: you chose <b>${esc(data.type)}</b>, but the file looks like a <b>${esc(data.detected_type)}</b> EOC — it was reviewed as <b>${esc(data.type)}</b>. If that's wrong, switch the type above and re-run.</div>` : '';
+  const dl=`<a class="dl" href="/review/download/${data.download_token}">⬇ Download annotated EOC (.xlsx)</a>`;
+  const emailed = data.emailed ? `<div class="emailed">✓ A copy was emailed to ${esc(data.email_to)}.</div>` : '';
+  const cards=(data.items||[]).filter(i=>i.readiness).map(revCard).join('');
+  out.innerHTML = head + mism + board + dl + emailed + cards + `<div class="disc">${esc(data.disclaimer||'')}</div>`;
+}
+
 let reviewing=false;
 $('#reviewBtn').onclick=async ()=>{
   if(reviewing) return;
@@ -724,30 +743,38 @@ $('#reviewBtn').onclick=async ()=>{
   const out=$('#reviewOut');
   if(!f){ out.innerHTML='<div class="rev notfound">Please choose your filled EOC .xlsx file first.</div>'; return; }
   reviewing=true; const btn=$('#reviewBtn'); btn.disabled=true; btn.textContent='Reviewing…';
-  out.innerHTML=`<div class="meta-sm">Reviewing your <b>${esc(reviewType)}</b> EOC line-by-line — this can take a minute for a large file…</div>`;
+  out.innerHTML=`<div class="meta-sm">Reviewing your <b>${esc(reviewType)}</b> EOC line-by-line…</div>
+    <div class="progress"><div class="progress-bar" id="revBar"></div></div>
+    <div class="progress-txt" id="revPct">Starting…</div>`;
+  const setProg=(done,total)=>{ const pct=total?Math.min(100,Math.round(done/total*100)):0; const bar=$('#revBar'),txt=$('#revPct'); if(bar)bar.style.width=pct+'%'; if(txt)txt.textContent=`Reviewed ${done} of ${total} lines · ${pct}%`; if(btn)btn.textContent=`Reviewing… ${pct}%`; };
   try{
     const fd=new FormData();
     fd.append('eoc', f); fd.append('formType', reviewType);
     const lic=$('#license').value.trim(); if(lic) fd.append('license', lic);
     const headers={'x-session':session}; if(lic) headers['x-license-key']=lic;
     const res=await fetch('/review',{method:'POST', body:fd, headers});
-    const data=await res.json();
-    if(res.status===401 && data.gate){ openGate(); return; }
-    if(res.status===402 && data.pay==='review'){ out.innerHTML=`<div class="rev"><b>Paid feature.</b> Unlock a full ITL-style review of this EOC.<br><br>${payBtn('review','Pay & review my EOC')}</div>`; return; }
-    if(!res.ok){ out.innerHTML=`<div class="rev notfound">${esc(data.error||'Review failed.')}</div>`; return; }
-    const s=data.scoreboard;
-    const board=`<div class="scoreboard">
-      ${scoreCard(s.READY,'Ready','ready')}
-      ${scoreCard(s.NEEDS_ATTENTION,'Needs attention','attention')}
-      ${scoreCard(s.N_A,'N/A','na')}
-      ${scoreCard(s.MISSING,'Missing','missing')}
-    </div>`;
-    const head=`<div class="meta-sm"><b>${esc(data.type)} EOC</b> · ${data.answered_rows} answered rows · reviewed ${data.reviewed_rows}${data.capped?` (first ${data.cap} — raise the limit for the full audit)`:''}${data.dev_mode?' · dev mode':''}</div>`;
-    const mism = data.type_mismatch ? `<div class="warn">Heads-up: you chose <b>${esc(data.type)}</b>, but the file looks like a <b>${esc(data.detected_type)}</b> EOC — it was reviewed as <b>${esc(data.type)}</b>. If that's wrong, switch the type above and re-run.</div>` : '';
-    const dl=`<a class="dl" href="/review/download/${data.download_token}">⬇ Download annotated EOC (.xlsx)</a>`;
-    const emailed = data.emailed ? `<div class="emailed">✓ A copy was emailed to ${esc(data.email_to)}.</div>` : '';
-    const cards=data.items.filter(i=>i.readiness).map(revCard).join('');
-    out.innerHTML = head + mism + board + dl + emailed + cards + `<div class="disc">${esc(data.disclaimer)}</div>`;
+    if(!res.ok){
+      const data=await res.json().catch(()=>({}));
+      if(res.status===401 && data.gate){ openGate(); return; }
+      if(res.status===402 && data.pay==='review'){ out.innerHTML=`<div class="rev"><b>Paid feature.</b> Unlock a full ITL-style review of this EOC.<br><br>${payBtn('review','Pay & review my EOC')}</div>`; return; }
+      out.innerHTML=`<div class="rev notfound">${esc(data.error||'Review failed.')}</div>`; return;
+    }
+    // read the NDJSON stream: {progress:{done,total}} lines, then a final {result} (or {error})
+    const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='', finalData=null, errMsg=null;
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let nl; while((nl=buf.indexOf('\n'))>=0){
+        const line=buf.slice(0,nl).trim(); buf=buf.slice(nl+1); if(!line) continue;
+        let o; try{ o=JSON.parse(line); }catch{ continue; }
+        if(o.progress){ setProg(o.progress.done,o.progress.total); }
+        else if(o.result){ finalData=o.result; }
+        else if(o.error){ errMsg=o.error; }
+      }
+    }
+    if(errMsg){ out.innerHTML=`<div class="rev notfound">${esc(errMsg)}</div>`; return; }
+    if(finalData) renderReviewResult(finalData, out);
+    else out.innerHTML=`<div class="rev notfound">The review returned no result — please try again.</div>`;
   }catch(e){ out.innerHTML=`<div class="rev notfound">Network error: ${esc(e.message)}</div>`; }
   finally{ reviewing=false; btn.disabled=false; btn.textContent='Review my EOC'; }
 };

@@ -291,7 +291,14 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
     const answered = scoped.filter((r) => r.answered).length;
     // Optional cap (transparent) so a huge EOC doesn't hit the request timeout.
     const limit = Math.min(parseInt(req.body?.limit || '', 10) || (parseInt(process.env.REVIEW_MAX_ROWS || '', 10) || 50), 400);
-    const report = await reviewEOC({ type, rows: scoped, limit });
+    // Stream progress to the browser as NDJSON: {progress:{done,total}} lines while the LLM
+    // works through the rows, then one final {result:{…}} line. (Drives the live progress bar.)
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no'); // ask proxies not to buffer the stream
+    const writeLine = (o) => { try { res.write(JSON.stringify(o) + '\n'); } catch {} };
+    writeLine({ progress: { done: 0, total: Math.min(answered, limit) } });
+    const report = await reviewEOC({ type, rows: scoped, limit, onProgress: (done, total) => writeLine({ progress: { done, total } }) });
     const annotated = await writeEOC(req.file.buffer, report.updates);
     const token = cacheDownload(annotated, `EOC-${type}-review.xlsx`);
     if (billed) billing.useReview(revEmail); // consume one paid review credit on success
@@ -302,7 +309,7 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
     const to = leads.emailForToken(req.sessionToken);
     if (mailAvailable()) emailed = await sendReviewEmail({ to, type, scoreboard: report.scoreboard, attachment: annotated, filename: `EOC-${type}-review.xlsx` });
     console.log(`[review] type=${type} detected=${detected} rows=${eoc.rows.length} answered=${answered} reviewed=${reviewedCount} emailed=${emailed} dev=${devMode} ms=${Date.now() - t0}`);
-    res.json({
+    writeLine({ result: {
       type, detected_type: detected, type_mismatch: mismatch,
       sheet: eoc.sheetName,
       total_item_rows: eoc.rows.length,
@@ -316,10 +323,12 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
       emailed, email_to: emailed ? to : '',
       dev_mode: devMode,
       disclaimer: 'Reference guidance only — not a formal ITL determination, and it does not see your actual attached documents/drawings. Final approval is subject to ITL review of the actual submission. Your uploaded EOC was processed in memory only and was not stored.',
-    });
+    } });
+    res.end();
   } catch (err) {
     console.error('[review] error', err.message);
-    res.status(500).json({ error: 'Could not review this EOC. Is it a valid SI 6464 EOC .xlsx (with a Report Body sheet)?' });
+    if (res.headersSent) { try { res.write(JSON.stringify({ error: 'The review failed partway through — please try again.' }) + '\n'); } catch {} res.end(); }
+    else res.status(500).json({ error: 'Could not review this EOC. Is it a valid SI 6464 EOC .xlsx (with a Report Body sheet)?' });
   }
 });
 
