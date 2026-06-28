@@ -255,12 +255,19 @@
   .filebox.has{border:2px solid var(--accent);background:var(--card);color:var(--ink);box-shadow:none;font-weight:600}
   .filebox.drag{border-color:var(--brand);background:#eef3fa}
   .license{border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:14px;width:230px}
-  #reviewBtn{white-space:nowrap}
-  .prem-type{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 14px}
-  .pt-label{font-size:13px;color:var(--muted);font-weight:600;margin-right:4px}
-  .ptbtn{background:#eef2f7;border:1px solid var(--line);color:var(--muted);border-radius:20px;
-    padding:8px 14px;font-size:13.5px;font-weight:600;cursor:pointer}
-  .ptbtn.active{background:var(--brand);border-color:var(--brand);color:#fff}
+  #reviewBtn{white-space:nowrap;background:linear-gradient(135deg,#ef4444,#b91c1c);border:0;box-shadow:0 2px 10px rgba(185,28,28,.3)}
+  #reviewBtn:hover{filter:brightness(1.07);background:linear-gradient(135deg,#ef4444,#b91c1c)}
+  .prem-type{display:flex;flex-direction:column;gap:8px;margin:6px 0 16px}
+  .pt-label{font-size:13px;color:var(--muted);font-weight:600}
+  /* big segmented toggle: Piping (Ch 7) vs IAA (Ch 4–6) */
+  .seg{display:flex;width:100%;max-width:580px;background:var(--card);border:2px solid var(--line);border-radius:16px;padding:5px;gap:5px}
+  .seg-btn{flex:1;border:0;background:transparent;color:var(--muted);border-radius:12px;padding:14px 8px;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:2px;transition:background .15s,color .15s;line-height:1.2}
+  .seg-btn span{font-size:16px;font-weight:800}
+  .seg-btn small{font-size:12px;font-weight:600;opacity:.9}
+  .seg-btn.active{background:var(--brand);color:#fff;box-shadow:0 2px 10px rgba(11,95,165,.3)}
+  .seg-btn:not(.active):hover{background:#eef3fa;color:var(--brand-dark)}
+  body.dark .seg-btn:not(.active):hover{background:#202e3f}
   .scoreboard{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
   .score{flex:1;min-width:90px;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:var(--card)}
   .score .n{font-size:26px;font-weight:800;line-height:1}
@@ -422,8 +429,10 @@
     </details>
     <div class="prem-type">
       <span class="pt-label">I'm reviewing an EOC for:</span>
-      <button class="ptbtn active" id="ptPiping" data-t="Piping">Piping — Chapter 7</button>
-      <button class="ptbtn" id="ptIAA" data-t="IAA">IAA appliances — Chapters 4–6</button>
+      <div class="seg" id="segType" role="tablist">
+        <button class="seg-btn active" id="ptPiping" data-t="Piping" role="tab"><span>Piping</span><small>Chapter 7</small></button>
+        <button class="seg-btn" id="ptIAA" data-t="IAA" role="tab"><span>IAA appliances</span><small>Chapters 4–6</small></button>
+      </div>
     </div>
     <div class="prem-form">
       <label class="filebox hl" id="filebox">
