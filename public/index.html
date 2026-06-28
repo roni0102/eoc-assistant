@@ -174,6 +174,17 @@
   .modal-actions{display:flex;gap:10px;margin-top:20px}
   .modal-actions .go{flex:1}
   .ghost{background:#eef2f7;border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:11px 16px;font-weight:600;cursor:pointer}
+  /* upgrade upsell modal */
+  .modal-card.upg{max-width:470px}
+  .upg-lead{font-size:14.5px;color:var(--ink);line-height:1.5;margin:0 0 14px}
+  .upg-benefits{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:11px}
+  .upg-benefits li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);line-height:1.45}
+  .upg-benefits li span{flex:none;font-size:17px;line-height:1.2}
+  .upg-benefits li b{color:var(--brand-dark)}
+  #upgradeModal .modal-actions{flex-direction:column}
+  #upgradeModal .modal-actions .go{flex:none;width:100%}
+  #upgradeModal #upgradeCancel{width:100%;margin-top:10px;background:transparent;border:none;color:var(--muted)}
+  .go.ghost2{background:#eef2f7;color:var(--brand-dark);border:1px solid var(--line)}
   /* pricing / checkout */
   .pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:6px}
   .price-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column}
@@ -354,6 +365,21 @@
   <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>
   <span>· © RK Bold Finance Ltd</span>
 </footer>
+
+<div id="upgradeModal" class="modal" hidden>
+  <div class="modal-card upg">
+    <div class="modal-h" id="upgradeTitle">Upgrade to premium</div>
+    <p class="upg-lead" id="upgradeLead"></p>
+    <ul class="upg-benefits">
+      <li><span>♾️</span> <b>Unlimited questions</b> — no 10-question cap</li>
+      <li><span>📎</span> <b>Attach up to 5 files</b> per question (drawings &amp; PDFs)</li>
+      <li><span>📋</span> <b>Full premium EOC review</b> — your whole form, line by line, with up to 5 supporting files the engine reads</li>
+      <li><span>🌐</span> Answers in Hebrew, English &amp; Russian</li>
+    </ul>
+    <div class="modal-actions" id="upgradeActions"></div>
+    <button class="ghost" id="upgradeCancel">Maybe later</button>
+  </div>
+</div>
 
 <div id="policyModal" class="modal" hidden>
   <div class="modal-card">
@@ -540,6 +566,7 @@ async function ask(){
       pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b limit-msg">${esc(data.message)}<br><br>${buyQ}${sub}<button class="go goExpert">💬 Talk to a real expert →</button></div>`;
       pending.querySelector('.goExpert').onclick=()=>showTab('expert');
       pending.scrollIntoView({behavior:'smooth', block:'start'});
+      openUpgrade('cap'); // upsell popup with the premium benefits
       return;
     }
     if(!res.ok){ pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b notfound">${esc(data.error||'Error')}</div>`; return; }
@@ -565,11 +592,15 @@ $('#q').addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.isComposing)
 
 // ---- Ask attachments (image/PDF; 1 free / up to 5 premium) ----
 let askFilesArr = [];
-const maxAskFiles = () => ((ME.entitlements && ME.entitlements.subActive) || !ME.billing) ? 5 : 1;
+const maxAskFiles = () => ((ME.entitlements && ME.entitlements.subActive) ? 5 : 1);
 $('#askFiles').onchange = (e) => { addAskFiles(e.target.files); e.target.value=''; };
 function addAskFiles(list){
   for(const f of list){
-    if(askFilesArr.length >= maxAskFiles()){ toast(`Up to ${maxAskFiles()} file${maxAskFiles()>1?'s':''} per question${(ME.billing && maxAskFiles()===1)?' on the free plan — subscribe for 5':''}.`,'info'); break; }
+    if(askFilesArr.length >= maxAskFiles()){
+      if(maxAskFiles()===1) openUpgrade('files');           // free user → upsell popup
+      else toast('Up to 5 files per question.','info');     // premium ceiling
+      break;
+    }
     if(f.size > 12*1024*1024){ toast(`"${f.name}" is too large (max 12 MB).`,'err'); continue; }
     askFilesArr.push(f);
   }
@@ -671,6 +702,26 @@ function renderPricing(){
 }
 function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kind]}` : ''; }
 function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
+// Upgrade upsell popup — shown when a free user hits the 10-question cap ('cap') or tries to
+// attach more than one file ('files'). Advertises the premium benefits and routes to checkout.
+function openUpgrade(reason){
+  $('#upgradeLead').textContent = reason==='files'
+    ? 'Attaching more than one file is a premium feature. Upgrade and get:'
+    : "You've used all your free questions. Upgrade to keep going and get:";
+  let actions = '';
+  if(ME.billing){
+    actions = payBtn('subscription','⭐ Subscribe — unlimited');
+    if(reason==='cap') actions += payBtn('questions','＋ Buy more questions');
+  } else {
+    actions = `<button class="go" onclick="closeUpgrade(); showTab('buy');">See plans &amp; pricing →</button>`;
+  }
+  actions += `<button class="go ghost2" onclick="closeUpgrade(); showTab('expert');">💬 Talk to a real expert</button>`;
+  $('#upgradeActions').innerHTML = actions;
+  $('#upgradeModal').hidden = false;
+}
+function closeUpgrade(){ $('#upgradeModal').hidden = true; }
+$('#upgradeCancel').onclick = closeUpgrade;
+$('#upgradeModal').addEventListener('click', (e)=>{ if(e.target.id==='upgradeModal') closeUpgrade(); });
 // Checkout requires accepting the Purchasing Policy first (a checkbox with a link to it).
 let pendingKind=null;
 function goCheckout(kind){

@@ -57,8 +57,8 @@ const uploadReview = multer({
     cb(null, false);
   },
 });
-// 1 attachment for free, up to 5 for a premium account (or while billing isn't connected yet).
-const maxFilesFor = (email) => (!billing.billingAvailable() || billing.hasSub(email)) ? 5 : 1;
+// 1 attachment for free accounts, up to 5 for a premium (subscribed) account.
+const maxFilesFor = (email) => (billing.hasSub(email) ? 5 : 1);
 
 // Premium gate — fallback used only when Grow billing is NOT configured (see billing.mjs).
 // Configure PREMIUM_LICENSE_KEYS=key1,key2 for a manual gate; if unset, premium is OPEN (dev mode).
