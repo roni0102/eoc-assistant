@@ -12,7 +12,7 @@ const PASS = process.env.SMTP_PASS || '';
 const PORT = Number(process.env.SMTP_PORT || 587);
 const FROM = process.env.EMAIL_FROM || USER;
 // Internal address that gets a summary whenever a client books an expert consultation.
-const EXPERT_NOTIFY = process.env.EXPERT_NOTIFY_EMAIL || 'roni@rkbf.pro';
+const EXPERT_NOTIFY = process.env.EXPERT_NOTIFY_EMAIL || 'roni0102@gmail.com';
 // Internal address that gets a copy of every user-submitted bug report.
 const BUG_NOTIFY = process.env.BUG_NOTIFY_EMAIL || EXPERT_NOTIFY;
 
