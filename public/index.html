@@ -173,12 +173,15 @@
   .modal-actions{display:flex;gap:10px;margin-top:20px}
   .modal-actions .go{flex:1}
   .ghost{background:#eef2f7;border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:11px 16px;font-weight:600;cursor:pointer}
-  /* upgrade upsell modal */
-  .modal-card.upg{max-width:470px}
+  /* upgrade upsell modal — premium gold accent so it stands out from the page */
+  .modal-card.upg{max-width:470px;border:1px solid #e9c879;border-top:5px solid #e6a008;
+    background:linear-gradient(180deg,#fff8ea 0,var(--card) 130px);
+    box-shadow:0 24px 70px rgba(0,0,0,.32),0 0 0 1px rgba(230,160,8,.18)}
   .upg-lead{font-size:14.5px;color:var(--ink);line-height:1.5;margin:0 0 14px}
   .upg-benefits{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:11px}
   .upg-benefits li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);line-height:1.45}
-  .upg-benefits li span{flex:none;font-size:17px;line-height:1.2}
+  .upg-benefits li .ic{flex:none;font-size:17px;line-height:1.45;width:20px;text-align:center}
+  .upg-benefits li>div{flex:1}
   .upg-benefits li b{color:var(--brand-dark)}
   #upgradeModal .modal-actions{flex-direction:column}
   #upgradeModal .modal-actions .go{flex:none;width:100%}
@@ -269,6 +272,9 @@
   body.dark .progress{background:#243240}
   /* white surfaces */
   body.dark .gate-card,body.dark .modal-card{background:#1a2534}
+  body.dark .modal-card.upg{border-color:#5a4a20;border-top-color:#e6a008;
+    background:linear-gradient(180deg,#2c2413 0,var(--card) 130px);
+    box-shadow:0 24px 70px rgba(0,0,0,.6),0 0 0 1px rgba(230,160,8,.3)}
   /* warning / error boxes */
   body.dark .notfound,body.dark .gate-err,body.dark .limit-msg,body.dark .warn{background:#2a2113;border-color:#5b4a20;color:#f0c88f}
   body.dark .tr-err,body.dark .expert-note.err{color:#f0a17a}
@@ -429,11 +435,11 @@
     <div class="modal-h" id="upgradeTitle">Upgrade to premium</div>
     <p class="upg-lead" id="upgradeLead"></p>
     <ul class="upg-benefits">
-      <li><span>♾️</span> <b>Unlimited questions</b> — no 10-question cap</li>
-      <li><span>📎</span> <b>Attach up to 5 files</b> per question (drawings &amp; PDFs)</li>
-      <li><span>📋</span> <b>Full premium EOC review</b> — your whole form, line by line, with up to 5 supporting files the engine reads</li>
-      <li><span>🌐</span> Answers in Hebrew, English &amp; Russian</li>
-      <li><span>📰</span> <b>Quarterly member newsletter</b> — updates &amp; a digest of tricky new questions raised</li>
+      <li><span class="ic">♾️</span><div><b>Unlimited questions</b> — no 10-question cap</div></li>
+      <li><span class="ic">📎</span><div><b>Attach up to 5 files</b> per question (drawings &amp; PDFs)</div></li>
+      <li><span class="ic">📋</span><div><b>Full premium EOC review</b> — your whole form, line by line, with up to 5 supporting files the engine reads</div></li>
+      <li><span class="ic">🌐</span><div>Answers in Hebrew, English &amp; Russian</div></li>
+      <li><span class="ic">📰</span><div><b>Quarterly member newsletter</b> — updates &amp; a digest of tricky new questions raised</div></li>
     </ul>
     <div class="modal-actions" id="upgradeActions"></div>
     <button class="ghost" id="upgradeCancel">Maybe later</button>
