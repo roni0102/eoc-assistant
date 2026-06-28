@@ -377,6 +377,7 @@
       <li><span>📎</span> <b>Attach up to 5 files</b> per question (drawings &amp; PDFs)</li>
       <li><span>📋</span> <b>Full premium EOC review</b> — your whole form, line by line, with up to 5 supporting files the engine reads</li>
       <li><span>🌐</span> Answers in Hebrew, English &amp; Russian</li>
+      <li><span>📰</span> <b>Quarterly member newsletter</b> — updates &amp; a digest of tricky new questions raised</li>
     </ul>
     <div class="modal-actions" id="upgradeActions"></div>
     <button class="ghost" id="upgradeCancel">Maybe later</button>
@@ -690,7 +691,7 @@ function renderPricing(){
   const p=(ME&&ME.pricing)||{}; const pack=p.questionsPack||'';
   const cur=(n)=> n ? `₪${n}` : '—';
   const cards=[
-    {kind:'subscription', name:'Monthly membership', desc:'Unlimited questions + the full EOC review included, for 30 days. Best value.', price:p.subscription, suffix:' /mo', best:true},
+    {kind:'subscription', name:'Monthly membership', desc:'Unlimited questions + the full EOC review included, for 30 days. Plus a quarterly member newsletter with updates and a digest of tricky new questions. Best value.', price:p.subscription, suffix:' /mo', best:true},
     {kind:'questions', name:'Per question', desc:'Pay for one question at a time. Does not include the full EOC review.', price:p.questions, suffix:' /question'},
     {kind:'review', name:'Full EOC Review', desc:'One-time line-by-line review of one uploaded EOC — what the IB will expect, per clause. No membership needed.', price:p.review},
     {kind:'consult', name:'Talk to an expert', desc:'A 30-minute online meeting with an ITL specialist.', price:p.consult, suffix:' /30 min'},
