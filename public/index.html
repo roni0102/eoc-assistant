@@ -156,6 +156,20 @@
     box-shadow:0 8px 28px rgba(0,0,0,.28);transition:opacity .25s,transform .25s;max-width:90vw;text-align:center}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .toast.err{background:#7c2d12} .toast.info{background:#334155}
+  /* footer + policy modal */
+  .site-footer{max-width:920px;margin:28px auto 18px;padding:0 20px;text-align:center;font-size:12px;color:var(--muted)}
+  .site-footer a{color:var(--brand);text-decoration:none;font-weight:600} .site-footer a:hover{text-decoration:underline}
+  .site-footer span{margin-left:6px}
+  .modal{position:fixed;inset:0;z-index:300;background:rgba(15,37,64,.5);display:flex;align-items:center;justify-content:center;padding:20px}
+  .modal[hidden]{display:none}
+  .modal-card{background:#fff;border-radius:16px;padding:24px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal-h{font-size:18px;font-weight:800;margin-bottom:14px;color:var(--ink)}
+  .policy-chk{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);line-height:1.5;cursor:pointer}
+  .policy-chk input{margin-top:3px;width:17px;height:17px;flex:none}
+  .policy-chk a{color:var(--brand);font-weight:600}
+  .modal-actions{display:flex;gap:10px;margin-top:20px}
+  .modal-actions .go{flex:1}
+  .ghost{background:#eef2f7;border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:11px 16px;font-weight:600;cursor:pointer}
   @media(max-width:560px){
     .topnav-in{flex-direction:column;gap:6px;padding:8px 10px}
     .brand-sm{font-size:16px}
@@ -295,6 +309,23 @@
       </div>
       <button class="go" id="expertBtn">Request meeting</button>
       <div id="expertNote" class="expert-note"></div>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>
+  <span>· © RK Bold Finance Ltd</span>
+</footer>
+
+<div id="policyModal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-h">Before payment</div>
+    <label class="policy-chk"><input type="checkbox" id="policyChk" />
+      <span>I have read and accept the <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</span></label>
+    <div class="modal-actions">
+      <button class="go" id="policyContinue" disabled>Continue to payment</button>
+      <button class="ghost" id="policyCancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -559,9 +590,16 @@ let ME = { billing:false, pricing:{}, entitlements:{} };
 async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok){ ME=await r.json(); const fl=$('#freeLimitN'); if(fl && ME.freeLimit) fl.textContent=ME.freeLimit; } }catch{} }
 function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kind]}` : ''; }
 function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
-async function goCheckout(kind){
+// Checkout requires accepting the Purchasing Policy first (a checkbox with a link to it).
+let pendingKind=null;
+function goCheckout(kind){ pendingKind=kind; $('#policyChk').checked=false; $('#policyContinue').disabled=true; $('#policyModal').hidden=false; }
+$('#policyChk').onchange=()=>{ $('#policyContinue').disabled=!$('#policyChk').checked; };
+$('#policyCancel').onclick=()=>{ $('#policyModal').hidden=true; pendingKind=null; };
+$('#policyModal').addEventListener('click',e=>{ if(e.target.id==='policyModal'){ $('#policyModal').hidden=true; pendingKind=null; } });
+$('#policyContinue').onclick=()=>{ if(!$('#policyChk').checked||!pendingKind) return; const k=pendingKind; pendingKind=null; $('#policyModal').hidden=true; doCheckout(k); };
+async function doCheckout(kind){
   try{
-    const r=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({kind})});
+    const r=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({kind, policy:true})});
     const d=await r.json().catch(()=>({}));
     if(r.status===401 && d.gate){ openGate(); return; }
     if(!r.ok || !d.url){ toast(d.error||'Payments are not available right now.','err'); return; }
