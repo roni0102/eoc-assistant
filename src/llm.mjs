@@ -74,25 +74,29 @@ function priorMessages(history) {
     .map((h) => ({ role: h.role, content: h.content.slice(0, 6000) }));
 }
 
+// Convert uploaded files (image / PDF) into Claude content blocks (vision / document).
+export function fileBlocks(attachments) {
+  return (attachments || []).map((a) => (a.media_type === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } }
+    : { type: 'image', source: { type: 'base64', media_type: a.media_type, data: a.data } }));
+}
+
 /**
  * answerWithLLM({ query, cards, standard, history }): Claude's grounded, anonymous
  * answer, using the SI 6464 STANDARD passages (authoritative) + the anonymized CORPUS
  * cards, continuing the prior conversation (history). Throws { code: 'ANON_BLOCK' } if
  * the output trips the anonymity guard (fail-closed).
  */
-export async function answerWithLLM({ query, cards, standard, history }) {
+export async function answerWithLLM({ query, cards, standard, history, attachments }) {
   const context = renderContext(cards);
   const stdText = renderStandard(standard);
-  const messages = [
-    ...priorMessages(history),
-    {
-      role: 'user',
-      content:
-        `=== A) STANDARD — SI 6464 (authoritative requirement text) ===\n${stdText}\n\n` +
-        `=== B) CORPUS — anonymized resolved history (how it's answered) ===\n${context}\n\n` +
-        `---\nClient question: ${query}`,
-    },
-  ];
+  const userText =
+    `=== A) STANDARD — SI 6464 (authoritative requirement text) ===\n${stdText}\n\n` +
+    `=== B) CORPUS — anonymized resolved history (how it's answered) ===\n${context}\n\n` +
+    (attachments?.length ? `=== C) The client ATTACHED ${attachments.length} file(s) below — examine them and ground your answer in what they show (a drawing, document or photo), alongside the standard and corpus. ===\n\n` : '') +
+    `---\nClient question: ${query}`;
+  const content = [...fileBlocks(attachments), { type: 'text', text: userText }];
+  const messages = [...priorMessages(history), { role: 'user', content }];
   const res = await getClient().messages.create({
     model: MODEL,
     max_tokens: 1500,

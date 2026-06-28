@@ -13,6 +13,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getClause, retrieveStandard } from './retrieve.mjs';
 import { ruleHint } from './rulesets.mjs';
+import { fileBlocks } from './llm.mjs';
 
 const MODEL = process.env.EOC_MODEL || 'claude-opus-4-8';
 let client = null;
@@ -20,7 +21,7 @@ const getClient = () => (client ||= new Anthropic());
 
 const SYSTEM = `You are a senior inspector at ITL, an accredited Inspection Body (IB) under Israeli Standard SI 6464 (2017), helping a client PREPARE their EOC before submission.
 
-CRITICAL LIMITATION: you see ONLY the client's typed reply per line — NOT the attached documents/drawings/certificates/calculations. Do NOT certify evidence. For each row tell the client (a) WHAT THE IB/ITL WILL EXPECT (the specific documents, drawings, tests, calculations, certifications) and (b) whether the typed reply is complete and clear, or thin/vague and likely to draw a comment.
+LIMITATION: by default you see ONLY the client's typed reply per line — not their attached documents. EXCEPTION: the client MAY attach supporting files (drawings/documents/photos) for the whole submission — if so, those files are provided to you; when a row's required evidence is clearly visible in an attached file you MAY judge it READY and reference what the file shows. Otherwise do NOT certify evidence you cannot see. For each row tell the client (a) WHAT THE IB/ITL WILL EXPECT (the specific documents, drawings, tests, calculations, certifications) and (b) whether the typed reply (and any attached file) is complete and clear, or thin/vague and likely to draw a comment.
 
 Per row you get: the SI 6464 clause, its requirement, the client's typed answer; grounding (the SI 6464 standard text + the anonymized history of how this clause was resolved); and — when the clause is recognised — a SEVERITY tag and a CANONICAL IB REQUEST.
 
@@ -68,16 +69,13 @@ function extractJson(text) {
   try { return JSON.parse(m[0]); } catch { return []; }
 }
 
-async function reviewBatch(type, rows) {
+async function reviewBatch(type, rows, attachments) {
   const payload = rows.map(groundRow);
-  const res = await getClient().messages.create({
-    model: MODEL,
-    max_tokens: 4000,
-    system: SYSTEM,
-    messages: [{ role: 'user', content: `EOC type: ${type}.\nReview these ${rows.length} rows. Return the JSON array.\n\n${JSON.stringify(payload, null, 1)}` }],
-  });
-  const text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-  return extractJson(text);
+  const text = `EOC type: ${type}.${attachments?.length ? ` ${attachments.length} SUPPORTING file(s) (drawings/documents) are attached below — when a row's required evidence is clearly visible in them, you MAY judge it READY and reference what the file shows; otherwise assess from the typed reply as usual.` : ''}\nReview these ${rows.length} rows. Return the JSON array.\n\n${JSON.stringify(payload, null, 1)}`;
+  const content = [...fileBlocks(attachments), { type: 'text', text }];
+  const res = await getClient().messages.create({ model: MODEL, max_tokens: 4000, system: SYSTEM, messages: [{ role: 'user', content }] });
+  const out = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  return extractJson(out);
 }
 
 const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
@@ -104,7 +102,7 @@ const ibClosed = (r) => {
 };
 const isOpen = (r) => !naVerdict(r) && !ibClosed(r);
 
-export async function reviewEOC({ type, rows, limit, onProgress }) {
+export async function reviewEOC({ type, rows, limit, attachments, onProgress }) {
   // LLM-review only OPEN, answered, non-structural requirement rows (saves tokens + correctness).
   let reviewable = rows.filter((r) => r.reviewable && r.requirement && r.clause && !isStructural(r.requirement, r.clause) && isOpen(r));
   if (limit) reviewable = reviewable.slice(0, limit);
@@ -116,7 +114,7 @@ export async function reviewEOC({ type, rows, limit, onProgress }) {
   const CONC = 3;
   for (let i = 0; i < batches.length; i += CONC) {
     const slice = batches.slice(i, i + CONC);
-    const settled = await Promise.allSettled(slice.map((b) => reviewBatch(type, b)));
+    const settled = await Promise.allSettled(slice.map((b) => reviewBatch(type, b, attachments)));
     settled.forEach((s) => { if (s.status === 'fulfilled') for (const it of s.value) if (it && it.row != null) reviews.set(it.row, it); });
     done += slice.reduce((n, b) => n + b.length, 0);
     onProgress?.(Math.min(done, reviewable.length), reviewable.length);

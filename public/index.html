@@ -227,6 +227,13 @@
   .rev .line.exp{background:#f0f6fc;border:1px solid #d6e6f5;border-radius:8px;padding:8px 11px}
   .warn{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:10px;padding:10px 14px;font-size:13px;margin:10px 0}
   .emailed{font-size:13px;color:var(--accent);font-weight:600;margin:8px 0}
+  /* attachments */
+  .attach{display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;padding:0 6px;color:var(--muted);user-select:none}
+  .attach:hover{color:var(--brand)}
+  .filechips{display:flex;flex-wrap:wrap;gap:6px;max-width:660px;margin:8px auto 0}
+  .fchip{font-size:12px;background:#eef3fa;border:1px solid #dfeaf6;color:var(--brand-dark);border-radius:8px;padding:3px 9px;display:inline-flex;align-items:center;gap:6px}
+  .fchip a{color:#9a3412;cursor:pointer;font-weight:700;text-decoration:none}
+  .filebox.support{min-height:auto;padding:11px 14px;font-size:13px;color:var(--muted);font-weight:500}
   .dl{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border-radius:10px;
     padding:11px 20px;font-weight:600;font-size:15px;margin:6px 0 14px}
   /* shared Q&A */
@@ -279,9 +286,11 @@
   <div id="freeView">
     <div class="searchbar">
       <input id="q" type="text" placeholder="e.g. &quot;7.2.1.5&quot;, &quot;wall thickness&quot;, &quot;hydrostatic test&quot;, &quot;נוהל הגפה&quot;" autocomplete="off" />
+      <label class="attach" id="attachBtn" title="Attach a file (image or PDF) to your question">📎<input id="askFiles" type="file" accept="image/*,application/pdf" multiple hidden /></label>
       <button class="go" id="go">Ask</button>
     </div>
-    <div class="hint">Ask a question, then keep the conversation going with follow-ups. Answers are generic and anonymous.</div>
+    <div id="askFileList" class="filechips"></div>
+    <div class="hint">Ask a question, then keep the conversation going with follow-ups. Answers are generic and anonymous. Attach a drawing or PDF to ask about it.</div>
     <div class="disclaimer">
       <b>Reference guidance only.</b> Past accepted replies <b>do not guarantee</b> the same response from the Inspection Body (IB) or ITL — every submission is assessed on its own merits.
       The <b>free plan includes <span id="freeLimitN">10</span> questions</b> per user; beyond that, a per-question payment or a monthly subscription is required.
@@ -308,9 +317,14 @@
         <input id="eocFile" type="file" accept=".xlsx" hidden />
         <span id="fileLabel">Choose or drop your filled EOC .xlsx…</span>
       </label>
+      <label class="filebox support" id="supportBox">
+        <input id="supportFiles" type="file" accept="image/*,application/pdf" multiple hidden />
+        <span id="supportLabel">Optional: attach up to 5 supporting files (drawings / docs — images or PDF) the review can look at</span>
+      </label>
       <input id="license" class="license" type="text" placeholder="License key (leave blank in dev mode)" autocomplete="off" />
       <button class="go" id="reviewBtn">Review my EOC</button>
     </div>
+    <div id="supportFileList" class="filechips"></div>
     <div id="reviewOut"></div>
   </div>
 
@@ -502,12 +516,18 @@ async function ask(){
   if(q === lastQ && now - lastQt < 1500) return;
   lastQ = q; lastQt = now;
   $('#q').value=''; chips.style.display='none';
+  const files = askFilesArr.slice(); askFilesArr=[]; renderAskFiles(); // attached files for this turn
   busy=true; const btn=$('#go'); btn.disabled=true; btn.textContent='…';
-  const userBubble = bubble('user', `<div class="answer-b"${isHe(q)?' dir="rtl"':''}>${esc(q)}</div>`);
+  const userBubble = bubble('user', `<div class="answer-b"${isHe(q)?' dir="rtl"':''}>${esc(q)}${files.length?` <span class="muted">(📎 ${files.length} file${files.length>1?'s':''})</span>`:''}</div>`);
   const pending = bubble('bot pending', '<div class="answer-h">Assistant</div><div class="answer-b muted">Thinking…</div>');
   try{
-    const res = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json','x-session':session},
-      body: JSON.stringify({q, history: convo})});
+    let res;
+    if(files.length){
+      const fd=new FormData(); fd.append('q',q); fd.append('history',JSON.stringify(convo)); for(const f of files) fd.append('files',f);
+      res = await fetch('/ask',{method:'POST', headers:{'x-session':session}, body: fd});
+    } else {
+      res = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json','x-session':session}, body: JSON.stringify({q, history: convo})});
+    }
     const data = await res.json();
     // session expired mid-query → clean up this question and re-gate; restore the box so the
     // user can re-ask in one click after entering details (no orphaned bubble left behind).
@@ -542,6 +562,24 @@ async function ask(){
 }
 $('#go').onclick = ask;
 $('#q').addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.isComposing){ e.preventDefault(); ask(); } });
+
+// ---- Ask attachments (image/PDF; 1 free / up to 5 premium) ----
+let askFilesArr = [];
+const maxAskFiles = () => ((ME.entitlements && ME.entitlements.subActive) || !ME.billing) ? 5 : 1;
+$('#askFiles').onchange = (e) => { addAskFiles(e.target.files); e.target.value=''; };
+function addAskFiles(list){
+  for(const f of list){
+    if(askFilesArr.length >= maxAskFiles()){ toast(`Up to ${maxAskFiles()} file${maxAskFiles()>1?'s':''} per question${(ME.billing && maxAskFiles()===1)?' on the free plan — subscribe for 5':''}.`,'info'); break; }
+    if(f.size > 12*1024*1024){ toast(`"${f.name}" is too large (max 12 MB).`,'err'); continue; }
+    askFilesArr.push(f);
+  }
+  renderAskFiles();
+}
+function renderAskFiles(){
+  const el=$('#askFileList'); if(!el) return;
+  el.innerHTML = askFilesArr.map((f,i)=>`<span class="fchip">📎 ${esc(f.name)} <a data-i="${i}" title="remove">×</a></span>`).join('');
+  el.querySelectorAll('a').forEach(a=>a.onclick=()=>{ askFilesArr.splice(+a.dataset.i,1); renderAskFiles(); });
+}
 
 // ---- shared Q&A (questions other clients have asked) ----
 let sharedLoaded=false;
@@ -697,6 +735,21 @@ fileInput.onchange=()=>{ if(fileInput.files[0]){ fileLabel.textContent=fileInput
 ['dragover','dragenter'].forEach(ev=>filebox.addEventListener(ev,e=>{e.preventDefault();filebox.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=>filebox.addEventListener(ev,e=>{e.preventDefault();filebox.classList.remove('drag');}));
 filebox.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f){ fileInput.files=e.dataTransfer.files; fileLabel.textContent=f.name; filebox.classList.add('has'); } });
+// premium supporting files (up to 5 images/PDFs the review can look at)
+let supportFilesArr=[];
+$('#supportBox').onclick=()=>$('#supportFiles').click();
+$('#supportFiles').onchange=(e)=>{
+  for(const f of e.target.files){
+    if(supportFilesArr.length>=5){ toast('Up to 5 supporting files.','info'); break; }
+    if(f.size>12*1024*1024){ toast(`"${f.name}" is too large (max 12 MB).`,'err'); continue; }
+    supportFilesArr.push(f);
+  }
+  e.target.value=''; renderSupportFiles();
+};
+function renderSupportFiles(){
+  const el=$('#supportFileList'); el.innerHTML=supportFilesArr.map((f,i)=>`<span class="fchip">📎 ${esc(f.name)} <a data-i="${i}" title="remove">×</a></span>`).join('');
+  el.querySelectorAll('a').forEach(a=>a.onclick=(ev)=>{ ev.stopPropagation(); supportFilesArr.splice(+a.dataset.i,1); renderSupportFiles(); });
+}
 
 // two explicit entry points: Piping (Ch 7) vs IAA (Ch 4–6)
 let reviewType='Piping';
@@ -750,6 +803,7 @@ $('#reviewBtn').onclick=async ()=>{
   try{
     const fd=new FormData();
     fd.append('eoc', f); fd.append('formType', reviewType);
+    for(const sf of supportFilesArr) fd.append('supporting', sf);
     const lic=$('#license').value.trim(); if(lic) fd.append('license', lic);
     const headers={'x-session':session}; if(lic) headers['x-license-key']=lic;
     const res=await fetch('/review',{method:'POST', body:fd, headers});

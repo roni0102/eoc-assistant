@@ -39,6 +39,27 @@ const upload = multer({
   fileFilter: (_req, file, cb) => cb(null, /\.xlsx$/i.test(file.originalname) || /spreadsheet/i.test(file.mimetype)),
 });
 
+// Attachments (images / PDF) the client adds to a question or to the review. In-memory only.
+const MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'application/pdf']);
+const uploadMedia = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024, files: 5 }, // 12 MB each, ≤5 files
+  fileFilter: (_req, file, cb) => cb(null, MEDIA_TYPES.has(file.mimetype)),
+});
+const toAttachments = (files) => (files || []).map((f) => ({ media_type: f.mimetype === 'image/jpg' ? 'image/jpeg' : f.mimetype, data: f.buffer.toString('base64'), name: f.originalname }));
+// Review upload: the EOC .xlsx + up to 5 supporting media files (drawings/docs the engine can see).
+const uploadReview = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 6 },
+  fileFilter: (_req, file, cb) => {
+    if (file.fieldname === 'eoc') return cb(null, /\.xlsx$/i.test(file.originalname) || /spreadsheet/i.test(file.mimetype));
+    if (file.fieldname === 'supporting') return cb(null, MEDIA_TYPES.has(file.mimetype));
+    cb(null, false);
+  },
+});
+// 1 attachment for free, up to 5 for a premium account (or while billing isn't connected yet).
+const maxFilesFor = (email) => (!billing.billingAvailable() || billing.hasSub(email)) ? 5 : 1;
+
 // Premium gate — fallback used only when Grow billing is NOT configured (see billing.mjs).
 // Configure PREMIUM_LICENSE_KEYS=key1,key2 for a manual gate; if unset, premium is OPEN (dev mode).
 const LICENSE_KEYS = (process.env.PREMIUM_LICENSE_KEYS || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -183,7 +204,7 @@ app.post('/expert', rateLimit, requireGate, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/ask', rateLimit, requireGate, async (req, res) => {
+app.post('/ask', rateLimit, requireGate, uploadMedia.array('files', 5), async (req, res) => {
   const t0 = Date.now();
   const q = String(req.body?.q ?? '').slice(0, 2000).trim();
   if (!q) return res.status(400).json({ error: 'Empty query.' });
@@ -203,8 +224,13 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
       });
     }
   }
-  // prior conversation turns sent by the browser (stateless backend)
-  const history = Array.isArray(req.body?.history) ? req.body.history : [];
+  // prior conversation turns sent by the browser (history is a JSON string under multipart)
+  let history = req.body?.history;
+  if (typeof history === 'string') { try { history = JSON.parse(history); } catch { history = []; } }
+  if (!Array.isArray(history)) history = [];
+  // attached files (image/PDF): 1 for free, up to 5 for premium. The client's own files —
+  // processed in memory only, never stored; the text answer still passes the anonymity guard.
+  const attachments = toAttachments((req.files || []).slice(0, maxFilesFor(askEmail)));
   // Keep follow-ups on-topic: blend the previous question into the retrieval query so a
   // context-dependent follow-up ("and what does the IB ask for?") still surfaces the same
   // clause. The current question's own terms still carry weight, so a clear topic change
@@ -216,12 +242,14 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
     const answer = composeAnswer({ query: q, retrieved });
     // LLM layer: when a key is configured, Claude writes a grounded, anonymous
     // natural-language answer from the (already-anonymized) retrieved cards.
-    if (answer.covered && llmAvailable()) {
+    if ((answer.covered || attachments.length) && llmAvailable()) {
       try {
         const standard = retrieveStandard(retrievalQ);
-        const llm = await answerWithLLM({ query: q, cards: answer.cards, standard, history });
+        const llm = await answerWithLLM({ query: q, cards: answer.cards, standard, history, attachments });
+        answer.covered = true; // an attached file is reviewable even without a clause match
         answer.llm_answer = llm.text;
         answer.llm_model = llm.model;
+        answer.attachments = attachments.length;
         answer.standard_sources = [...new Set(standard.map((s) => s.source))];
       } catch (e) {
         if (e.code === 'ANON_BLOCK') console.error('[ask] LLM answer BLOCKED by anonymity guard');
@@ -255,7 +283,7 @@ app.post('/ask', rateLimit, requireGate, async (req, res) => {
 // --- Premium: full-EOC review (Deliverable: the eoc-fill engine, server-side) ----------
 // Upload a filled EOC -> ITL-style line-by-line review. The file is processed in memory
 // only; it is never persisted and never added to the public knowledge base.
-app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
+app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: 'supporting', maxCount: 5 }]), requireGate, async (req, res) => {
   const t0 = Date.now();
   if (!llmAvailable()) return res.status(503).json({ error: 'Premium review needs the LLM — set ANTHROPIC_API_KEY.' });
   // Paid review: once billing is live, require a review credit (per-use; the subscription
@@ -271,9 +299,11 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
     if (!gate.ok) return res.status(402).json({ error: 'Premium feature — a valid license key is required.' });
     devMode = gate.dev;
   }
-  if (!req.file) return res.status(400).json({ error: 'No EOC file uploaded (.xlsx).' });
+  const eocFile = req.files?.eoc?.[0];
+  if (!eocFile) return res.status(400).json({ error: 'No EOC file uploaded (.xlsx).' });
+  const supporting = toAttachments((req.files?.supporting || []).slice(0, 5)); // drawings/docs the engine can see
   try {
-    const eoc = await readEOC(req.file.buffer);
+    const eoc = await readEOC(eocFile.buffer);
     const detected = eoc.type; // Piping | IAA, from the file's clauses
     const chosen = ['Piping', 'IAA'].includes(String(req.body?.formType)) ? req.body.formType : null;
     const type = chosen || detected; // the client picked an entry point; trust it, flag mismatch
@@ -298,8 +328,8 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
     res.setHeader('X-Accel-Buffering', 'no'); // ask proxies not to buffer the stream
     const writeLine = (o) => { try { res.write(JSON.stringify(o) + '\n'); } catch {} };
     writeLine({ progress: { done: 0, total: limit ? Math.min(answered, limit) : answered } });
-    const report = await reviewEOC({ type, rows: scoped, limit, onProgress: (done, total) => writeLine({ progress: { done, total } }) });
-    const annotated = await writeEOC(req.file.buffer, report.updates);
+    const report = await reviewEOC({ type, rows: scoped, limit, attachments: supporting, onProgress: (done, total) => writeLine({ progress: { done, total } }) });
+    const annotated = await writeEOC(eocFile.buffer, report.updates);
     const token = cacheDownload(annotated, `EOC-${type}-review.xlsx`);
     if (billed) billing.useReview(revEmail); // consume one paid review credit on success
     leads.markTier(req.sessionToken, 'premium'); // record that this lead used premium
