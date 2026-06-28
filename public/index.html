@@ -186,6 +186,9 @@
   #bugModal textarea,#bugModal input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
     font-size:14px;font-family:inherit;margin-bottom:10px;background:var(--card);color:var(--ink)}
   #bugModal textarea{resize:vertical;min-height:90px}
+  #bugModal .bug-file{display:block;border:1.5px dashed var(--line);border-radius:10px;padding:10px 13px;
+    font-size:13.5px;color:var(--muted);cursor:pointer;text-align:center;margin-bottom:10px}
+  #bugModal .bug-file.has{border-color:var(--accent);color:var(--ink)}
   #bugModal textarea:focus,#bugModal input:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px rgba(11,95,165,.12)}
   #upgradeModal .modal-actions{flex-direction:column}
   #upgradeModal .modal-actions .go{flex:none;width:100%}
@@ -457,6 +460,7 @@
     <p class="upg-lead" style="margin-bottom:10px">Tell us what went wrong — what you did, what you expected, and what actually happened. Thanks for helping improve the assistant.</p>
     <textarea id="bugMsg" rows="4" placeholder="Describe the problem…"></textarea>
     <input id="bugEmail" type="email" placeholder="Your email (optional — so we can follow up)" />
+    <label class="bug-file" id="bugFileBtn"><span id="bugFileLabel">Attach a screenshot or file (optional — image or PDF)</span><input id="bugFile" type="file" accept="image/*,application/pdf" hidden /></label>
     <div class="modal-actions">
       <button class="go" id="bugSend">Send report</button>
       <button class="ghost" id="bugCancel">Cancel</button>
@@ -851,17 +855,24 @@ async function adminUnlock(){
 }
 $('#adminLink').onclick=(e)=>{ e.preventDefault(); adminUnlock(); };
 // ---- bug report ----
-function openBug(){ $('#bugMsg').value=''; $('#bugEmail').value=''; $('#bugNote').textContent=''; $('#bugNote').className='expert-note'; $('#bugModal').hidden=false; $('#bugMsg').focus(); }
+let bugFileObj=null;
+function resetBugFile(){ bugFileObj=null; $('#bugFile').value=''; $('#bugFileLabel').textContent='Attach a screenshot or file (optional — image or PDF)'; $('#bugFileBtn').classList.remove('has'); }
+function openBug(){ $('#bugMsg').value=''; $('#bugEmail').value=''; $('#bugNote').textContent=''; $('#bugNote').className='expert-note'; resetBugFile(); $('#bugModal').hidden=false; $('#bugMsg').focus(); }
 $('#bugLink').onclick=(e)=>{ e.preventDefault(); openBug(); };
 $('#bugCancel').onclick=()=>{ $('#bugModal').hidden=true; };
 $('#bugModal').addEventListener('click',(e)=>{ if(e.target.id==='bugModal') $('#bugModal').hidden=true; });
+$('#bugFile').onchange=(e)=>{ const f=e.target.files[0]; if(!f) return resetBugFile();
+  if(f.size>10*1024*1024){ toast('File too large (max 10 MB).','err'); return resetBugFile(); }
+  bugFileObj=f; $('#bugFileLabel').textContent=`📎 ${f.name}`; $('#bugFileBtn').classList.add('has'); };
 $('#bugSend').onclick=async ()=>{
   const message=$('#bugMsg').value.trim(); const note=$('#bugNote');
   if(message.length<3){ note.className='expert-note err'; note.textContent='Please describe the problem.'; return; }
   const btn=$('#bugSend'); const old=btn.textContent; btn.disabled=true; btn.textContent='Sending…';
   const context=(document.querySelector('.tab.active')?.textContent||'')+(document.body.classList.contains('dark')?' · dark':'');
   try{
-    const r=await fetch('/bug',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({message, email:$('#bugEmail').value.trim(), context})});
+    const fd=new FormData(); fd.append('message',message); fd.append('email',$('#bugEmail').value.trim()); fd.append('context',context);
+    if(bugFileObj) fd.append('file',bugFileObj);
+    const r=await fetch('/bug',{method:'POST',headers:{'x-session':session},body:fd});
     const d=await r.json().catch(()=>({}));
     if(r.ok){ note.className='expert-note ok'; note.textContent='✓ Thanks — your report was sent.'; setTimeout(()=>{ $('#bugModal').hidden=true; },1400); }
     else { note.className='expert-note err'; note.textContent=d.error||'Could not send — please try again.'; }

@@ -96,7 +96,7 @@ export async function sendExpertEmail({ booking }) {
  * sendBugEmail({ bug }) -> boolean. Emails a user-submitted bug report to BUG_NOTIFY
  * (default roni@rkbf.pro). Graceful no-op when SMTP isn't configured.
  */
-export async function sendBugEmail({ bug }) {
+export async function sendBugEmail({ bug, file }) {
   if (!mailAvailable() || !bug) return false;
   const b = bug.bug || {};
   const text =
@@ -105,12 +105,14 @@ export async function sendBugEmail({ bug }) {
     `— Reporter: ${bug.email || '—'}${bug.company ? ' (' + bug.company + ')' : ''}\n` +
     `— Where: ${b.context || '—'}\n` +
     `— Browser: ${b.ua || '—'}\n` +
+    `— Attachment: ${file?.name || b.attachment || 'none'}\n` +
     `— Time: ${bug.ts}`;
   try {
     await getTransport().sendMail({
       from: FROM, to: BUG_NOTIFY, replyTo: bug.email || undefined,
       subject: `Bug report — EOC Assistant${bug.company ? ' · ' + bug.company : ''}`,
       text,
+      attachments: (file && file.buffer) ? [{ filename: file.name || 'screenshot', content: file.buffer, contentType: file.mimetype }] : [],
     });
     return true;
   } catch (e) {

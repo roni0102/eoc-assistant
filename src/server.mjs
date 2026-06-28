@@ -170,15 +170,18 @@ app.post('/admin/unlock', rateLimit, requireGate, (req, res) => {
   res.json({ ok: true, admin: true });
 });
 
-// User-submitted bug report → leads.jsonl + Google Sheet (persistent) + email. No gate required
-// (a bug may block gating); the session token is used only to attach the reporter if present.
-app.post('/bug', rateLimit, (req, res) => {
+// User-submitted bug report → leads.jsonl + Google Sheet (persistent) + email (with the optional
+// screenshot/file attached). No gate required (a bug may block gating); the session token is used
+// only to attach the reporter if present. The file is held in memory and forwarded, never stored.
+app.post('/bug', rateLimit, uploadMedia.single('file'), (req, res) => {
+  const file = req.file ? { name: req.file.originalname, mimetype: req.file.mimetype, buffer: req.file.buffer } : null;
   const r = leads.recordBug({
     token: req.get('x-session') || '', message: req.body?.message,
     email: req.body?.email, context: req.body?.context, ua: req.get('user-agent'),
+    attachmentName: file?.name || '',
   });
   if (!r.ok) return res.status(400).json({ error: r.error });
-  if (mailAvailable()) sendBugEmail({ bug: r.entry }).catch(() => {});
+  if (mailAvailable()) sendBugEmail({ bug: r.entry, file }).catch(() => {});
   res.json({ ok: true });
 });
 

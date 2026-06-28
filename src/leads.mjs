@@ -216,13 +216,14 @@ export function recordConsent(token, detail) {
  * leads.jsonl AND mirrored to the Google Sheet (persistent even on an ephemeral disk). Tied to
  * the reporter's lead when a session token is supplied; otherwise just their typed email.
  */
-export function recordBug({ token, message, email, context, ua }) {
+export function recordBug({ token, message, email, context, ua, attachmentName }) {
   const lead = token ? leadForToken(token) : null;
   message = String(message || '').slice(0, 2000).trim();
   if (message.length < 3) return { ok: false, error: 'Please describe the problem.' };
+  const attach = String(attachmentName || '').slice(0, 160);
   const entry = {
     id: lead?.id, ts: new Date().toISOString(),
-    bug: { message, context: String(context || '').slice(0, 200), ua: String(ua || '').slice(0, 200) },
+    bug: { message, context: String(context || '').slice(0, 200), ua: String(ua || '').slice(0, 200), attachment: attach },
     company: lead?.company || '',
     email: (String(email || '').slice(0, 160).trim() || lead?.email || ''),
     phone: lead?.phone || '',
@@ -231,7 +232,8 @@ export function recordBug({ token, message, email, context, ua }) {
     fs.mkdirSync(path.dirname(LEADS_PATH), { recursive: true });
     fs.appendFileSync(LEADS_PATH, JSON.stringify(entry) + '\n');
   } catch (e) { /* non-fatal */ }
-  sendToSheet({ ts: entry.ts, company: entry.company, email: entry.email, phone: entry.phone, tier: `BUG REPORT — ${message.slice(0, 420)}` });
+  const note = `BUG REPORT — ${message.slice(0, 400)}${attach ? ` [attachment: ${attach} — see email]` : ''}`;
+  sendToSheet({ ts: entry.ts, company: entry.company, email: entry.email, phone: entry.phone, tier: note.slice(0, 480) });
   return { ok: true, entry };
 }
 
