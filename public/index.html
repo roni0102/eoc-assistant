@@ -109,6 +109,7 @@
   .gate-chk input{margin-top:2px;width:16px;height:16px;flex:none}
   .gate-chk a{color:var(--brand);font-weight:600}
   .gate-consent{font-size:12px;color:var(--muted);margin-top:16px;line-height:1.5}
+  .gate-consent a{color:var(--brand);font-weight:600}
   /* main-page usage disclaimer */
   .disclaimer{max-width:660px;margin:14px auto 0;background:#fbfcfe;border:1px solid var(--line);
     border-radius:12px;padding:10px 16px;font-size:11px;color:var(--muted);line-height:1.5}
@@ -247,11 +248,10 @@
       <input id="gCompany" type="text" placeholder="Company name" autocomplete="organization" />
       <input id="gEmail" type="email" placeholder="Work email" autocomplete="email" inputmode="email" />
       <input id="gPhone" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" />
-      <label class="gate-chk"><input type="checkbox" id="gPolicy" /><span>I have read and accept the <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a></span></label>
       <div id="gateErr" class="gate-err" hidden></div>
       <button type="submit" class="go" id="gateBtn">Enter</button>
     </form>
-    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 10 questions per user; beyond that, a per-question payment or a monthly subscription is required.</div>
+    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 10 questions per user; beyond that, a per-question payment or a monthly subscription is required. See our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
   </div>
 </div>
 
@@ -577,7 +577,6 @@ async function submitGate(){
   if(company.length<2) return show('Please enter your company name.');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) return show('Please enter a valid email address.');
   if((phone.match(/\d/g)||[]).length<7) return show('Please enter a valid phone number (at least 7 digits).');
-  if(!$('#gPolicy').checked) return show('Please accept the Purchasing Policy & Terms to continue.');
   err.hidden=true; gating=true;
   const btn=$('#gateBtn'); btn.disabled=true; btn.textContent='…';
   try{
