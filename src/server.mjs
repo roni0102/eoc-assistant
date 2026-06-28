@@ -17,7 +17,7 @@ import { composeAnswer } from './answer.mjs';
 import { answerWithLLM, translate, LANG_NAMES, llmAvailable, MODEL } from './llm.mjs';
 import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
-import { mailAvailable, sendReviewEmail } from './mailer.mjs';
+import { mailAvailable, sendReviewEmail, sendExpertEmail } from './mailer.mjs';
 import * as qalog from './qalog.mjs';
 import * as leads from './leads.mjs';
 import * as billing from './billing.mjs';
@@ -202,6 +202,8 @@ app.post('/expert', rateLimit, requireGate, (req, res) => {
   });
   if (!r.ok) return res.status(400).json({ error: r.error });
   if (billed) billing.useConsult(email); // consume one consult credit on success
+  // Email an internal summary to the team (graceful: no-op unless SMTP is configured).
+  if (mailAvailable()) sendExpertEmail({ booking: r.entry }).catch(() => {});
   console.log('[expert] consultation booking captured');
   res.json({ ok: true });
 });

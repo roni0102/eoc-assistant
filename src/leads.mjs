@@ -187,7 +187,7 @@ export function addExpertRequest({ token, topic, description, slots }) {
   // Mirror to the Google Sheet so the team sees the booking with contact + proposed times.
   const human = `CONSULT (30-min) — Topic: ${topic} | Needs: ${description.slice(0, 280)} | Times: ${times.map((t) => t.replace('T', ' ')).join('  /  ')}`;
   sendToSheet({ ts: entry.ts, company: entry.company, email: entry.email, phone: entry.phone, tier: human.slice(0, 490) });
-  return { ok: true };
+  return { ok: true, entry };
 }
 
 /**

@@ -11,6 +11,8 @@ const USER = process.env.SMTP_USER || '';
 const PASS = process.env.SMTP_PASS || '';
 const PORT = Number(process.env.SMTP_PORT || 587);
 const FROM = process.env.EMAIL_FROM || USER;
+// Internal address that gets a summary whenever a client books an expert consultation.
+const EXPERT_NOTIFY = process.env.EXPERT_NOTIFY_EMAIL || 'roni@rkbf.pro';
 
 export const mailAvailable = () => !!(HOST && USER);
 
@@ -49,6 +51,41 @@ export async function sendReviewEmail({ to, type, scoreboard, attachment, filena
     return true;
   } catch (e) {
     try { console.error('[mail] send failed:', e?.message || e); } catch {}
+    return false;
+  }
+}
+
+/**
+ * sendExpertEmail({ booking }) -> boolean
+ * Emails an internal summary of a new expert-consultation booking to EXPERT_NOTIFY
+ * (default roni@rkbf.pro). Reply-To is set to the client so the team can answer directly.
+ * Never throws into the request path (returns false on failure / when SMTP isn't configured).
+ */
+export async function sendExpertEmail({ booking }) {
+  if (!mailAvailable() || !booking) return false;
+  const c = booking.consult || {};
+  const slots = (c.slots || []).map((s) => `  • ${String(s).replace('T', ' ')}`).join('\n');
+  const text =
+    `New 30-minute expert consultation request from the EOC Assistant.\n\n` +
+    `Client\n` +
+    `  Company: ${booking.company || '—'}\n` +
+    `  Email:   ${booking.email || '—'}\n` +
+    `  Phone:   ${booking.phone || '—'}\n\n` +
+    `Topic\n  ${c.topic || '—'}\n\n` +
+    `What they need\n  ${(c.description || '—').replace(/\n/g, '\n  ')}\n\n` +
+    `Proposed times\n${slots || '  • —'}\n\n` +
+    `Submitted: ${booking.ts}\n\n— EOC Assistant`;
+  try {
+    await getTransport().sendMail({
+      from: FROM,
+      to: EXPERT_NOTIFY,
+      replyTo: booking.email || undefined,
+      subject: `Expert consult request — ${booking.company || booking.email || 'client'} · ${c.topic || 'no topic'}`,
+      text,
+    });
+    return true;
+  } catch (e) {
+    try { console.error('[mail] expert notify failed:', e?.message || e); } catch {}
     return false;
   }
 }
