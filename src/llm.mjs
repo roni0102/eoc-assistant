@@ -134,8 +134,11 @@ export async function translate(text, lang = 'he') {
       'translate or transliterate them (e.g. IAA, EOC, IB, HAC, RTO, PE, CS, NDT, ATEX, P&ID, ' +
       'PSV, PFD, MOC). Translate only the surrounding sentence around them.\n' +
       '- Keep engineering nouns accurate (boiler, furnace, water heater, corrosion allowance).\n' +
-      '- In Hebrew, translate "design / designed / engineered" in the ENGINEERING sense as ' +
-      '"תכנון / מתוכנן / מתוכננת" — NEVER "עיצוב / מעוצב / מעוצבת" (that is aesthetic styling, wrong here).\n' +
+      '- Translate "design / designed / engineered" in the ENGINEERING sense (planning/calculation), ' +
+      'NOT the aesthetic/styling sense:\n' +
+      '    • Hebrew: use "תכנון / מתוכנן / מתוכננת" — NEVER "עיצוב / מעוצב / מעוצבת".\n' +
+      '    • Russian: use "проектирование / спроектированный / проектный" (or "расчётный") — ' +
+      'NEVER "дизайн / оформление / оформленный".\n' +
       '- Preserve the markdown formatting exactly (**bold**, bullet lists, line breaks).\n' +
       '- Translate the closing disclaimer line too.\n' +
       `Output ONLY the ${name} translation — no preamble, no explanation.`,
