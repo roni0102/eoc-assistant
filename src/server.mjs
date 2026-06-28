@@ -286,14 +286,17 @@ app.post('/ask', rateLimit, requireGate, uploadMedia.array('files', 5), async (r
 app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: 'supporting', maxCount: 5 }]), requireGate, async (req, res) => {
   const t0 = Date.now();
   if (!llmAvailable()) return res.status(503).json({ error: 'Premium review needs the LLM — set ANTHROPIC_API_KEY.' });
-  // Paid review: once billing is live, require a review credit (per-use; the subscription
-  // covers questions, not reviews). The credit is consumed on SUCCESS (below), not here, so a
-  // failed review never burns it. Until billing is connected, use the license-key gate.
+  // Paid review: once billing is live, access requires EITHER an active membership (which
+  // INCLUDES the full review) OR a one-time review credit. A credit is consumed on SUCCESS
+  // (below) only when not covered by membership, so a failed review never burns it. Until
+  // billing is connected, use the license-key gate.
   const revEmail = leads.emailForToken(req.sessionToken);
   const billed = billing.billingAvailable();
-  let devMode = false;
+  let devMode = false, subCovered = false;
   if (billed) {
-    if (billing.entitlements(revEmail).reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A paid EOC review is required.' });
+    const ent = billing.entitlements(revEmail);
+    subCovered = !!ent.subActive; // membership includes the full EOC review
+    if (!subCovered && ent.reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A one-time EOC review (₪87) or a monthly membership (₪57) is required.' });
   } else {
     const gate = premiumOk(req);
     if (!gate.ok) return res.status(402).json({ error: 'Premium feature — a valid license key is required.' });
@@ -331,7 +334,7 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
     const report = await reviewEOC({ type, rows: scoped, limit, attachments: supporting, onProgress: (done, total) => writeLine({ progress: { done, total } }) });
     const annotated = await writeEOC(eocFile.buffer, report.updates);
     const token = cacheDownload(annotated, `EOC-${type}-review.xlsx`);
-    if (billed) billing.useReview(revEmail); // consume one paid review credit on success
+    if (billed && !subCovered) billing.useReview(revEmail); // consume a credit only if membership didn't cover it
     leads.markTier(req.sessionToken, 'premium'); // record that this lead used premium
     const sb = report.scoreboard;
     // Email a copy to the client (graceful: no-op unless SMTP is configured).

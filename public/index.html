@@ -187,7 +187,9 @@
   .go.ghost2{background:#eef2f7;color:var(--brand-dark);border:1px solid var(--line)}
   /* pricing / checkout */
   .pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:6px}
-  .price-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column}
+  .price-card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column}
+  .price-card.best{border:2px solid var(--brand);box-shadow:0 6px 20px rgba(15,37,64,.08)}
+  .pc-badge{position:absolute;top:-11px;left:18px;background:var(--brand);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;letter-spacing:.02em}
   .pc-name{font-size:15px;font-weight:700;color:var(--ink)}
   .pc-price{font-size:28px;font-weight:800;color:var(--brand-dark);margin:8px 0 2px}
   .pc-price span{font-size:14px;font-weight:600;color:var(--muted)}
@@ -688,12 +690,13 @@ function renderPricing(){
   const p=(ME&&ME.pricing)||{}; const pack=p.questionsPack||'';
   const cur=(n)=> n ? `₪${n}` : '—';
   const cards=[
-    {kind:'questions', name:`${pack?pack+' ':''}more questions`, desc:'A pack of extra questions added to your account.', price:p.questions},
-    {kind:'subscription', name:'Monthly — unlimited questions', desc:'Ask as many questions as you like for 30 days.', price:p.subscription, suffix:' /mo'},
-    {kind:'review', name:'Full EOC Review', desc:'Line-by-line review of one uploaded EOC — what the IB will expect, per clause.', price:p.review},
-    {kind:'consult', name:'Expert Consultation', desc:'A 30-minute online meeting with an ITL specialist.', price:p.consult},
+    {kind:'subscription', name:'Monthly membership', desc:'Unlimited questions + the full EOC review included, for 30 days. Best value.', price:p.subscription, suffix:' /mo', best:true},
+    {kind:'questions', name:'Per question', desc:'Pay for one question at a time. Does not include the full EOC review.', price:p.questions, suffix:' /question'},
+    {kind:'review', name:'Full EOC Review', desc:'One-time line-by-line review of one uploaded EOC — what the IB will expect, per clause. No membership needed.', price:p.review},
+    {kind:'consult', name:'Talk to an expert', desc:'A 30-minute online meeting with an ITL specialist.', price:p.consult, suffix:' /30 min'},
   ];
-  $('#pricingGrid').innerHTML = cards.map(c=>`<div class="price-card">
+  $('#pricingGrid').innerHTML = cards.map(c=>`<div class="price-card${c.best?' best':''}">
+    ${c.best?'<div class="pc-badge">★ Best value</div>':''}
     <div class="pc-name">${esc(c.name)}</div>
     <div class="pc-price">${cur(c.price)}${(c.suffix&&c.price)?`<span>${esc(c.suffix)}</span>`:''}</div>
     <div class="pc-desc">${esc(c.desc)}</div>
@@ -713,7 +716,7 @@ function openUpgrade(reason){
     actions = payBtn('subscription','⭐ Subscribe — unlimited');
     if(reason==='cap') actions += payBtn('questions','＋ Buy more questions');
   } else {
-    actions = `<button class="go" onclick="closeUpgrade(); showTab('buy');">See plans &amp; pricing →</button>`;
+    actions = `<button class="go" onclick="closeUpgrade(); showTab('pricing');">See plans &amp; pricing →</button>`;
   }
   actions += `<button class="go ghost2" onclick="closeUpgrade(); showTab('expert');">💬 Talk to a real expert</button>`;
   $('#upgradeActions').innerHTML = actions;

@@ -28,19 +28,20 @@ const GROW = {
 };
 export const billingAvailable = () => !!(GROW.userId && GROW.pageCode);
 
-// Prices (ILS) + human descriptions per product.
-const QUESTIONS_PER_PACK = Number(process.env.GROW_QUESTIONS_PER_PACK || 20);
+// Prices (ILS) + human descriptions per product. Defaults reflect the published price list;
+// each is still overridable via env so they can be tuned without a code change.
+const QUESTIONS_PER_PACK = Number(process.env.GROW_QUESTIONS_PER_PACK || 1); // billed per single question
 const PRICE = {
-  review: Number(process.env.GROW_PRICE_REVIEW || 0),
-  consult: Number(process.env.GROW_PRICE_CONSULT || 0),
-  subscription: Number(process.env.GROW_PRICE_SUB || 0),
-  questions: Number(process.env.GROW_PRICE_QUESTIONS || 0), // price for one pack of N questions
+  review: Number(process.env.GROW_PRICE_REVIEW || 87),       // one-time full EOC review (no membership)
+  consult: Number(process.env.GROW_PRICE_CONSULT || 570),    // 30-minute expert meeting
+  subscription: Number(process.env.GROW_PRICE_SUB || 57),    // monthly membership
+  questions: Number(process.env.GROW_PRICE_QUESTIONS || 5),  // per single question
 };
 const DESC = {
   review: 'EOC full review (one EOC)',
   consult: '30-minute consultation with an ITL expert',
-  subscription: 'EOC Assistant — monthly unlimited questions',
-  questions: `EOC Assistant — ${QUESTIONS_PER_PACK} more questions`,
+  subscription: 'EOC Assistant — monthly membership: unlimited questions + full EOC review',
+  questions: QUESTIONS_PER_PACK === 1 ? 'EOC Assistant — 1 more question' : `EOC Assistant — ${QUESTIONS_PER_PACK} more questions`,
 };
 export const pricing = () => ({ ...PRICE, questionsPack: QUESTIONS_PER_PACK, currency: 'ILS', enabled: billingAvailable() });
 const MONTH_MS = 31 * 24 * 3600 * 1000;
