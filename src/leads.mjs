@@ -35,7 +35,7 @@ const sessions = new Map();
 // the gate with the same email does NOT reset the quota, and it survives instance restarts.
 // (On the free Render plan, data/ is wiped by a code redeploy; attach a persistent disk +
 // DATA_DIR to make it permanent across redeploys too.)
-const FREE_LIMIT = Number(process.env.FREE_QUERY_LIMIT || 10);
+const FREE_LIMIT = Number(process.env.FREE_QUERY_LIMIT || 5);
 const tokenEmail = new Map(); // token -> email (so a query can find its lead's email)
 const usageByEmail = (() => {
   try { return new Map(Object.entries(JSON.parse(fs.readFileSync(USAGE_PATH, 'utf8')))); }

@@ -321,7 +321,7 @@
       <div id="gateErr" class="gate-err" hidden></div>
       <button type="submit" class="go" id="gateBtn">Enter</button>
     </form>
-    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 10 questions per user; beyond that, a per-question payment or a monthly subscription is required. See our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
+    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 5 questions per user; beyond that, a per-question payment or a monthly subscription is required. See our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
   </div>
 </div>
 
@@ -354,12 +354,12 @@
     <div class="disclaimer">
       <div>
         <b>Reference guidance only.</b> Past accepted replies <b>do not guarantee</b> the same response from the Inspection Body (IB) or ITL — every submission is assessed on its own merits.
-        The <b>free plan includes <span id="freeLimitN">10</span> questions</b> per user; beyond that, a per-question payment or a monthly subscription is required.
+        The <b>free plan includes <span id="freeLimitN">5</span> questions</b> per user; beyond that, a per-question payment or a monthly subscription is required.
         Your questions and interactions are stored and used <b>anonymously</b> to improve this assistant, and may be shown <b>anonymously</b> to other clients — never revealing you, your company, site, or project.
       </div>
       <div class="bi-he">
         <b>מידע מנחה בלבד.</b> תשובות שהתקבלו בעבר <b>אינן מבטיחות</b> תגובה זהה מגוף הבדיקה (IB) או מ-ITL — כל הגשה נבחנת לגופה.
-        <b>התוכנית החינמית כוללת 10 שאלות</b> למשתמש; מעבר לכך נדרש תשלום לפי שאלה או מנוי חודשי.
+        <b>התוכנית החינמית כוללת 5 שאלות</b> למשתמש; מעבר לכך נדרש תשלום לפי שאלה או מנוי חודשי.
         השאלות והאינטראקציות שלכם נשמרות ומשמשות <b>באופן אנונימי</b> ללמידת מכונה ושיפור יכולת תגובה, ועשויות להיות מוצגות <b>באופן אנונימי</b> ללקוחות אחרים — מבלי לחשוף אתכם, את החברה, האתר או הפרויקט שלכם.
       </div>
     </div>
@@ -435,7 +435,7 @@
     <div class="modal-h" id="upgradeTitle">Upgrade to premium</div>
     <p class="upg-lead" id="upgradeLead"></p>
     <ul class="upg-benefits">
-      <li><span class="ic">♾️</span><div><b>Unlimited questions</b> — no 10-question cap</div></li>
+      <li><span class="ic">♾️</span><div><b>Unlimited questions</b> — no 5-question cap</div></li>
       <li><span class="ic">📎</span><div><b>Attach up to 5 files</b> per question (drawings &amp; PDFs)</div></li>
       <li><span class="ic">📋</span><div><b>Full premium EOC review</b> — your whole form, line by line, with up to 5 supporting files the engine reads</div></li>
       <li><span class="ic">🌐</span><div>Answers in Hebrew, English &amp; Russian</div></li>
@@ -799,7 +799,7 @@ function renderPricing(){
 }
 function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kind]}` : ''; }
 function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
-// Upgrade upsell popup — shown when a free user hits the 10-question cap ('cap') or tries to
+// Upgrade upsell popup — shown when a free user hits the free-question cap ('cap') or tries to
 // attach more than one file ('files'). Advertises the premium benefits and routes to checkout.
 function openUpgrade(reason){
   $('#upgradeLead').textContent =
