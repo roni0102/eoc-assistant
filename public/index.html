@@ -191,6 +191,7 @@
   .pc-badge{position:absolute;top:-11px;left:18px;background:var(--brand);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;letter-spacing:.02em}
   .pc-name{font-size:15px;font-weight:700;color:var(--ink)}
   .pc-price{font-size:28px;font-weight:800;color:var(--brand-dark);margin:8px 0 2px}
+  .pc-vat{font-size:12px;font-weight:600;color:var(--muted);margin-inline-start:6px}
   .pc-price span{font-size:14px;font-weight:600;color:var(--muted)}
   .pc-desc{font-size:13px;color:var(--muted);line-height:1.5;flex:1;margin-bottom:14px}
   .price-card .go{width:100%}
@@ -357,7 +358,7 @@
   </div>
 
   <div id="pricingView" hidden>
-    <div class="prem-intro">Choose what you need. Secure payment by credit card, Bit, Apple/Google&nbsp;Pay or PayPal via <b>Grow</b>. All prices include VAT. By purchasing you accept our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
+    <div class="prem-intro">Choose what you need. Secure payment by credit card, Bit, Apple/Google&nbsp;Pay or PayPal via <b>Grow</b>. All prices are shown <b>excluding VAT</b> — VAT (18%) is added at checkout. By purchasing you accept our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
     <div class="pricing-grid" id="pricingGrid"></div>
   </div>
 </div>
@@ -697,7 +698,7 @@ function renderPricing(){
   $('#pricingGrid').innerHTML = cards.map(c=>`<div class="price-card${c.best?' best':''}">
     ${c.best?'<div class="pc-badge">★ Best value</div>':''}
     <div class="pc-name">${esc(c.name)}</div>
-    <div class="pc-price">${cur(c.price)}${(c.suffix&&c.price)?`<span>${esc(c.suffix)}</span>`:''}</div>
+    <div class="pc-price">${cur(c.price)}${(c.suffix&&c.price)?`<span>${esc(c.suffix)}</span>`:''}${c.price?'<span class="pc-vat">+ VAT</span>':''}</div>
     <div class="pc-desc">${esc(c.desc)}</div>
     <button class="go pay" onclick="goCheckout('${c.kind}')">Buy</button>
   </div>`).join('') + (ME.billing?'':`<div class="pc-note">Online checkout is being finalized — purchasing will be enabled shortly.</div>`);
