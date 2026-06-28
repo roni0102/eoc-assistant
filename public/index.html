@@ -183,6 +183,10 @@
   .upg-benefits li .ic{flex:none;font-size:17px;line-height:1.45;width:20px;text-align:center}
   .upg-benefits li>div{flex:1}
   .upg-benefits li b{color:var(--brand-dark)}
+  #bugModal textarea,#bugModal input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+    font-size:14px;font-family:inherit;margin-bottom:10px;background:var(--card);color:var(--ink)}
+  #bugModal textarea{resize:vertical;min-height:90px}
+  #bugModal textarea:focus,#bugModal input:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px rgba(11,95,165,.12)}
   #upgradeModal .modal-actions{flex-direction:column}
   #upgradeModal .modal-actions .go{flex:none;width:100%}
   #upgradeModal #upgradeCancel{width:100%;margin-top:10px;background:transparent;border:none;color:var(--muted)}
@@ -426,6 +430,7 @@
 
 <footer class="site-footer">
   <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>
+  <span>·</span> <a href="#" id="bugLink">Report a bug</a>
   <span>· © RK Bold Finance Ltd ·</span>
   <a href="#" id="adminLink">Admin</a>
 </footer>
@@ -443,6 +448,20 @@
     </ul>
     <div class="modal-actions" id="upgradeActions"></div>
     <button class="ghost" id="upgradeCancel">Maybe later</button>
+  </div>
+</div>
+
+<div id="bugModal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-h">Report a bug</div>
+    <p class="upg-lead" style="margin-bottom:10px">Tell us what went wrong — what you did, what you expected, and what actually happened. Thanks for helping improve the assistant.</p>
+    <textarea id="bugMsg" rows="4" placeholder="Describe the problem…"></textarea>
+    <input id="bugEmail" type="email" placeholder="Your email (optional — so we can follow up)" />
+    <div class="modal-actions">
+      <button class="go" id="bugSend">Send report</button>
+      <button class="ghost" id="bugCancel">Cancel</button>
+    </div>
+    <div id="bugNote" class="expert-note"></div>
   </div>
 </div>
 
@@ -831,6 +850,24 @@ async function adminUnlock(){
   }catch(e){ toast('Could not reach the server — try again.','err'); }
 }
 $('#adminLink').onclick=(e)=>{ e.preventDefault(); adminUnlock(); };
+// ---- bug report ----
+function openBug(){ $('#bugMsg').value=''; $('#bugEmail').value=''; $('#bugNote').textContent=''; $('#bugNote').className='expert-note'; $('#bugModal').hidden=false; $('#bugMsg').focus(); }
+$('#bugLink').onclick=(e)=>{ e.preventDefault(); openBug(); };
+$('#bugCancel').onclick=()=>{ $('#bugModal').hidden=true; };
+$('#bugModal').addEventListener('click',(e)=>{ if(e.target.id==='bugModal') $('#bugModal').hidden=true; });
+$('#bugSend').onclick=async ()=>{
+  const message=$('#bugMsg').value.trim(); const note=$('#bugNote');
+  if(message.length<3){ note.className='expert-note err'; note.textContent='Please describe the problem.'; return; }
+  const btn=$('#bugSend'); const old=btn.textContent; btn.disabled=true; btn.textContent='Sending…';
+  const context=(document.querySelector('.tab.active')?.textContent||'')+(document.body.classList.contains('dark')?' · dark':'');
+  try{
+    const r=await fetch('/bug',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({message, email:$('#bugEmail').value.trim(), context})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){ note.className='expert-note ok'; note.textContent='✓ Thanks — your report was sent.'; setTimeout(()=>{ $('#bugModal').hidden=true; },1400); }
+    else { note.className='expert-note err'; note.textContent=d.error||'Could not send — please try again.'; }
+  }catch(e){ note.className='expert-note err'; note.textContent='Network error — please try again.'; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+};
 $('#upgradeCancel').onclick = closeUpgrade;
 $('#upgradeModal').addEventListener('click', (e)=>{ if(e.target.id==='upgradeModal') closeUpgrade(); });
 // Checkout requires accepting the Purchasing Policy first (a checkbox with a link to it).

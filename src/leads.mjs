@@ -211,4 +211,28 @@ export function recordConsent(token, detail) {
   return { ok: true, email: lead.email };
 }
 
+/**
+ * recordBug({ token, message, email, context, ua }): a user-submitted bug report. Saved to
+ * leads.jsonl AND mirrored to the Google Sheet (persistent even on an ephemeral disk). Tied to
+ * the reporter's lead when a session token is supplied; otherwise just their typed email.
+ */
+export function recordBug({ token, message, email, context, ua }) {
+  const lead = token ? leadForToken(token) : null;
+  message = String(message || '').slice(0, 2000).trim();
+  if (message.length < 3) return { ok: false, error: 'Please describe the problem.' };
+  const entry = {
+    id: lead?.id, ts: new Date().toISOString(),
+    bug: { message, context: String(context || '').slice(0, 200), ua: String(ua || '').slice(0, 200) },
+    company: lead?.company || '',
+    email: (String(email || '').slice(0, 160).trim() || lead?.email || ''),
+    phone: lead?.phone || '',
+  };
+  try {
+    fs.mkdirSync(path.dirname(LEADS_PATH), { recursive: true });
+    fs.appendFileSync(LEADS_PATH, JSON.stringify(entry) + '\n');
+  } catch (e) { /* non-fatal */ }
+  sendToSheet({ ts: entry.ts, company: entry.company, email: entry.email, phone: entry.phone, tier: `BUG REPORT — ${message.slice(0, 420)}` });
+  return { ok: true, entry };
+}
+
 export function stats() { return { leads: allLeads().length }; }

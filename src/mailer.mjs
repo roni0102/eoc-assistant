@@ -13,6 +13,8 @@ const PORT = Number(process.env.SMTP_PORT || 587);
 const FROM = process.env.EMAIL_FROM || USER;
 // Internal address that gets a summary whenever a client books an expert consultation.
 const EXPERT_NOTIFY = process.env.EXPERT_NOTIFY_EMAIL || 'roni@rkbf.pro';
+// Internal address that gets a copy of every user-submitted bug report.
+const BUG_NOTIFY = process.env.BUG_NOTIFY_EMAIL || EXPERT_NOTIFY;
 
 export const mailAvailable = () => !!(HOST && USER);
 
@@ -86,6 +88,33 @@ export async function sendExpertEmail({ booking }) {
     return true;
   } catch (e) {
     try { console.error('[mail] expert notify failed:', e?.message || e); } catch {}
+    return false;
+  }
+}
+
+/**
+ * sendBugEmail({ bug }) -> boolean. Emails a user-submitted bug report to BUG_NOTIFY
+ * (default roni@rkbf.pro). Graceful no-op when SMTP isn't configured.
+ */
+export async function sendBugEmail({ bug }) {
+  if (!mailAvailable() || !bug) return false;
+  const b = bug.bug || {};
+  const text =
+    `New bug report from the EOC Assistant.\n\n` +
+    `${b.message || '—'}\n\n` +
+    `— Reporter: ${bug.email || '—'}${bug.company ? ' (' + bug.company + ')' : ''}\n` +
+    `— Where: ${b.context || '—'}\n` +
+    `— Browser: ${b.ua || '—'}\n` +
+    `— Time: ${bug.ts}`;
+  try {
+    await getTransport().sendMail({
+      from: FROM, to: BUG_NOTIFY, replyTo: bug.email || undefined,
+      subject: `Bug report — EOC Assistant${bug.company ? ' · ' + bug.company : ''}`,
+      text,
+    });
+    return true;
+  } catch (e) {
+    try { console.error('[mail] bug notify failed:', e?.message || e); } catch {}
     return false;
   }
 }

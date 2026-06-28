@@ -17,7 +17,7 @@ import { composeAnswer } from './answer.mjs';
 import { answerWithLLM, translate, LANG_NAMES, llmAvailable, MODEL } from './llm.mjs';
 import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
-import { mailAvailable, sendReviewEmail, sendExpertEmail } from './mailer.mjs';
+import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail } from './mailer.mjs';
 import * as qalog from './qalog.mjs';
 import * as leads from './leads.mjs';
 import * as billing from './billing.mjs';
@@ -168,6 +168,18 @@ app.post('/admin/unlock', rateLimit, requireGate, (req, res) => {
   const email = leads.emailForToken(req.sessionToken);
   billing.grantAdmin(email);
   res.json({ ok: true, admin: true });
+});
+
+// User-submitted bug report → leads.jsonl + Google Sheet (persistent) + email. No gate required
+// (a bug may block gating); the session token is used only to attach the reporter if present.
+app.post('/bug', rateLimit, (req, res) => {
+  const r = leads.recordBug({
+    token: req.get('x-session') || '', message: req.body?.message,
+    email: req.body?.email, context: req.body?.context, ua: req.get('user-agent'),
+  });
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  if (mailAvailable()) sendBugEmail({ bug: r.entry }).catch(() => {});
+  res.json({ ok: true });
 });
 
 // Start a payment: returns a hosted-checkout URL the browser redirects to.
