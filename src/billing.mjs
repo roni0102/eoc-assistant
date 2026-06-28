@@ -64,10 +64,17 @@ function rec(email) {
 
 export function entitlements(email) {
   const r = rec(email);
-  return { reviews: r.reviews || 0, consults: r.consults || 0, questionCredits: r.questionCredits || 0, subActive: (r.subUntil || 0) > Date.now() };
+  return { reviews: r.reviews || 0, consults: r.consults || 0, questionCredits: r.questionCredits || 0, subActive: (r.subUntil || 0) > Date.now(), admin: !!r.admin };
 }
 export const extraQuestions = (email) => rec(email).questionCredits || 0; // purchased question packs raise the cap
 export const hasSub = (email) => (rec(email).subUntil || 0) > Date.now();
+
+// ---- Admin / owner bypass — the key lives ONLY in the ADMIN_KEY env var (never in code/repo).
+// A correct key unlocks unlimited questions + free EOC reviews for that session's email.
+export const adminConfigured = () => !!process.env.ADMIN_KEY;
+export const adminKeyValid = (k) => !!(process.env.ADMIN_KEY && String(k || '').trim() === process.env.ADMIN_KEY);
+export const isAdmin = (email) => !!rec(email).admin;
+export function grantAdmin(email) { const r = rec(email); r.admin = true; persist(); return true; }
 export function useReview(email) { const r = rec(email); if ((r.reviews || 0) <= 0) return false; r.reviews--; persist(); return true; }
 export function useConsult(email) { const r = rec(email); if ((r.consults || 0) <= 0) return false; r.consults--; persist(); return true; }
 export function grant(email, kind) {

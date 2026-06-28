@@ -156,7 +156,18 @@ app.post('/translate', rateLimit, requireGate, async (req, res) => {
 // Account/entitlement status for the current visitor (drives the UI's pay buttons).
 app.get('/me', requireGate, (req, res) => {
   const email = leads.emailForToken(req.sessionToken);
-  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: billing.entitlements(email), freeLimit: leads.freeLimit() });
+  const ent = billing.entitlements(email);
+  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, freeLimit: leads.freeLimit() });
+});
+
+// Admin/owner unlock: a correct ADMIN_KEY (env only) grants this email unlimited questions +
+// free EOC reviews. The key is never echoed or logged.
+app.post('/admin/unlock', rateLimit, requireGate, (req, res) => {
+  if (!billing.adminConfigured()) return res.status(503).json({ error: 'Admin access is not configured on this server.' });
+  if (!billing.adminKeyValid(req.body?.key)) return res.status(403).json({ error: 'Incorrect admin key.' });
+  const email = leads.emailForToken(req.sessionToken);
+  billing.grantAdmin(email);
+  res.json({ ok: true, admin: true });
 });
 
 // Start a payment: returns a hosted-checkout URL the browser redirects to.
@@ -214,7 +225,7 @@ app.post('/ask', rateLimit, requireGate, uploadMedia.array('files', 5), async (r
   if (!q) return res.status(400).json({ error: 'Empty query.' });
   // Free-plan cap (token-spend control). Subscribers skip the cap entirely (unlimited).
   const askEmail = leads.emailForToken(req.sessionToken);
-  const subscribed = billing.hasSub(askEmail);
+  const subscribed = billing.hasSub(askEmail) || billing.isAdmin(askEmail); // admin = unlimited
   let quota = null;
   if (!subscribed) {
     quota = leads.useQuery(req.sessionToken, billing.extraQuestions(askEmail));
@@ -297,14 +308,21 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
   const revEmail = leads.emailForToken(req.sessionToken);
   const billed = billing.billingAvailable();
   let devMode = false, subCovered = false;
-  if (billed) {
+  // Admin/owner bypass: the admin key may be supplied in the license field; once valid this email
+  // is flagged admin (persisted) and runs reviews free.
+  if (billing.adminKeyValid(req.body?.license)) billing.grantAdmin(revEmail);
+  const adminUser = billing.isAdmin(revEmail);
+  if (adminUser) {
+    subCovered = true; // admin runs reviews free, no credit consumed
+  } else if (billed) {
     const ent = billing.entitlements(revEmail);
     subCovered = !!ent.subActive; // membership includes the full EOC review
     if (!subCovered && ent.reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A one-time EOC review (₪87) or a monthly membership (₪97) is required.' });
   } else {
+    // Billing not connected yet: the full review is still a paid feature → free users get the
+    // payment popup. A manually-configured PREMIUM_LICENSE_KEY (not dev mode) still grants access.
     const gate = premiumOk(req);
-    if (!gate.ok) return res.status(402).json({ error: 'Premium feature — a valid license key is required.' });
-    devMode = gate.dev;
+    if (gate.dev || !gate.ok) return res.status(402).json({ pay: 'review', error: 'A full EOC review requires a paid plan.' });
   }
   const eocFile = req.files?.eoc?.[0];
   if (!eocFile) return res.status(400).json({ error: 'No EOC file uploaded (.xlsx).' });

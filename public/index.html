@@ -387,7 +387,8 @@
 
 <footer class="site-footer">
   <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>
-  <span>· © RK Bold Finance Ltd</span>
+  <span>· © RK Bold Finance Ltd ·</span>
+  <a href="#" id="adminLink">Admin</a>
 </footer>
 
 <div id="upgradeModal" class="modal" hidden>
@@ -755,13 +756,15 @@ function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout
 // Upgrade upsell popup — shown when a free user hits the 10-question cap ('cap') or tries to
 // attach more than one file ('files'). Advertises the premium benefits and routes to checkout.
 function openUpgrade(reason){
-  $('#upgradeLead').textContent = reason==='files'
-    ? 'Attaching more than one file is a premium feature. Upgrade and get:'
-    : "You've used all your free questions. Upgrade to keep going and get:";
+  $('#upgradeLead').textContent =
+    reason==='files'  ? 'Attaching more than one file is a premium feature. Upgrade and get:' :
+    reason==='review' ? 'A full EOC review is a premium feature. Get it with:' :
+                        "You've used all your free questions. Upgrade to keep going and get:";
   let actions = '';
   if(ME.billing){
     actions = payBtn('subscription','⭐ Subscribe — unlimited');
     if(reason==='cap') actions += payBtn('questions','＋ Buy more questions');
+    if(reason==='review') actions += payBtn('review','Pay for one review');
   } else {
     actions = `<button class="go" onclick="closeUpgrade(); showTab('pricing');">See plans &amp; pricing →</button>`;
   }
@@ -770,6 +773,18 @@ function openUpgrade(reason){
   $('#upgradeModal').hidden = false;
 }
 function closeUpgrade(){ $('#upgradeModal').hidden = true; }
+// Admin/owner unlock — enter the ADMIN_KEY to lift the question cap + run reviews free (this session's email).
+async function adminUnlock(){
+  const key = prompt('Admin key:');
+  if(!key) return;
+  try{
+    const r = await fetch('/admin/unlock',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({key:key.trim()})});
+    const d = await r.json().catch(()=>({}));
+    if(r.ok && d.admin){ toast('Admin unlocked — unlimited questions + free EOC reviews.','ok'); await refreshMe(); }
+    else toast(d.error || 'Incorrect admin key.','err');
+  }catch(e){ toast('Could not reach the server — try again.','err'); }
+}
+$('#adminLink').onclick=(e)=>{ e.preventDefault(); adminUnlock(); };
 $('#upgradeCancel').onclick = closeUpgrade;
 $('#upgradeModal').addEventListener('click', (e)=>{ if(e.target.id==='upgradeModal') closeUpgrade(); });
 // Checkout requires accepting the Purchasing Policy first (a checkbox with a link to it).
@@ -911,7 +926,7 @@ $('#reviewBtn').onclick=async ()=>{
     if(!res.ok){
       const data=await res.json().catch(()=>({}));
       if(res.status===401 && data.gate){ openGate(); return; }
-      if(res.status===402 && data.pay==='review'){ out.innerHTML=`<div class="rev"><b>Paid feature.</b> Unlock a full ITL-style review of this EOC.<br><br>${payBtn('review','Pay & review my EOC')}</div>`; return; }
+      if(res.status===402 && data.pay==='review'){ out.innerHTML=`<div class="rev"><b>A full EOC review requires a paid plan.</b> See your options in the popup.</div>`; openUpgrade('review'); return; }
       out.innerHTML=`<div class="rev notfound">${esc(data.error||'Review failed.')}</div>`; return;
     }
     // read the NDJSON stream: {progress:{done,total}} lines, then a final {result} (or {error})
