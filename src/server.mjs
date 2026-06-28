@@ -319,10 +319,14 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
     subCovered = !!ent.subActive; // membership includes the full EOC review
     if (!subCovered && ent.reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A one-time EOC review (₪87) or a monthly membership (₪97) is required.' });
   } else {
-    // Billing not connected yet: the full review is still a paid feature → free users get the
-    // payment popup. A manually-configured PREMIUM_LICENSE_KEY (not dev mode) still grants access.
+    // Pre-launch TESTING mode: while NOTHING is configured yet (no Grow billing, no ADMIN_KEY, no
+    // PREMIUM_LICENSE_KEYS), the review is OPEN so the owner can test it. The paywall switches on
+    // AUTOMATICALLY the moment any of those is set — then free users get the payment popup and
+    // admin/license holders bypass. A valid license key always grants access.
+    const paywallOn = billing.adminConfigured() || LICENSE_KEYS.length > 0;
     const gate = premiumOk(req);
-    if (gate.dev || !gate.ok) return res.status(402).json({ pay: 'review', error: 'A full EOC review requires a paid plan.' });
+    if (paywallOn && (gate.dev || !gate.ok)) return res.status(402).json({ pay: 'review', error: 'A full EOC review requires a paid plan.' });
+    devMode = gate.dev; // mark "open/testing" in the result + log
   }
   const eocFile = req.files?.eoc?.[0];
   if (!eocFile) return res.status(400).json({ error: 'No EOC file uploaded (.xlsx).' });
