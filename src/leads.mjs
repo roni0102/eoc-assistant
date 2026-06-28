@@ -190,4 +190,25 @@ export function addExpertRequest({ token, topic, description, slots }) {
   return { ok: true };
 }
 
+/**
+ * recordConsent(token, detail): log that this client accepted the Purchasing Policy & Terms,
+ * linked to the email they entered at the gate. Appended to leads.jsonl and mirrored to the
+ * Google Sheet so there's an auditable consent trail (who accepted, when, for what).
+ */
+export function recordConsent(token, detail) {
+  const lead = leadForToken(token);
+  if (!lead) return { ok: false, error: 'No lead for token.' };
+  const entry = {
+    id: lead.id, ts: new Date().toISOString(),
+    consent: { policy: 'Purchasing Policy & Terms', detail: String(detail || '').slice(0, 120) },
+    company: lead.company || '', email: lead.email || '', phone: lead.phone || '',
+  };
+  try {
+    fs.mkdirSync(path.dirname(LEADS_PATH), { recursive: true });
+    fs.appendFileSync(LEADS_PATH, JSON.stringify(entry) + '\n');
+  } catch (e) { /* non-fatal: the consent still proceeds */ }
+  sendToSheet({ ts: entry.ts, company: entry.company, email: entry.email, phone: entry.phone, tier: `POLICY ACCEPTED — ${entry.consent.detail}`.slice(0, 490) });
+  return { ok: true, email: lead.email };
+}
+
 export function stats() { return { leads: allLeads().length }; }

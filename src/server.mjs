@@ -164,6 +164,8 @@ app.post('/checkout', rateLimit, requireGate, async (req, res) => {
   const kind = String(req.body?.kind || '').trim();
   if (!['review', 'consult', 'subscription', 'questions'].includes(kind)) return res.status(400).json({ error: 'Unknown product.' });
   if (req.body?.policy !== true) return res.status(400).json({ error: 'Please accept the Purchasing Policy & Terms to continue.' });
+  // Audit the policy acceptance, linked to the client's email, to leads.jsonl + the Google Sheet.
+  leads.recordConsent(req.sessionToken, `checkout: ${kind}`);
   const email = leads.emailForToken(req.sessionToken);
   const origin = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   try {
