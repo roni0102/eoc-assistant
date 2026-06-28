@@ -117,11 +117,12 @@
   /* collapsible instruction/notes dropdown */
   details.info{margin:14px 0 0}
   details.info.narrow{max-width:660px;margin-left:auto;margin-right:auto}
-  details.info>summary{cursor:pointer;list-style:none;user-select:none;display:flex;align-items:center;gap:8px;
+  details.info>summary{cursor:pointer;list-style:none;user-select:none;position:relative;display:flex;
+    align-items:center;justify-content:center;gap:8px;text-align:center;
     font-size:13px;font-weight:600;color:var(--muted);background:var(--card);border:1px solid var(--line);
-    border-radius:10px;padding:9px 14px}
+    border-radius:10px;padding:9px 32px}
   details.info>summary::-webkit-details-marker{display:none}
-  details.info>summary::after{content:'▾';margin-inline-start:auto;font-size:11px;transition:transform .2s}
+  details.info>summary::after{content:'▾';position:absolute;inset-inline-end:14px;font-size:11px;transition:transform .2s}
   details.info[open]>summary::after{transform:rotate(180deg)}
   details.info>summary:hover{border-color:var(--brand);color:var(--brand)}
   details.info .disclaimer,details.info .prem-intro{margin-top:8px;max-width:none}
@@ -197,9 +198,10 @@
   #bugModal textarea,#bugModal input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
     font-size:14px;font-family:inherit;margin-bottom:10px;background:var(--card);color:var(--ink)}
   #bugModal textarea{resize:vertical;min-height:90px}
-  #bugModal .bug-file{display:block;border:1.5px dashed var(--line);border-radius:10px;padding:10px 13px;
-    font-size:13.5px;color:var(--muted);cursor:pointer;text-align:center;margin-bottom:10px}
-  #bugModal .bug-file.has{border-color:var(--accent);color:var(--ink)}
+  #bugModal .bug-file{display:block;border:2px dashed var(--brand);border-radius:10px;padding:11px 13px;
+    font-size:13.5px;color:var(--brand-dark);background:#eef5fc;font-weight:600;cursor:pointer;text-align:center;margin-bottom:10px}
+  body.dark #bugModal .bug-file{background:#16273a}
+  #bugModal .bug-file.has{border-style:solid;border-color:var(--accent);color:var(--ink)}
   #bugModal textarea:focus,#bugModal input:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px rgba(11,95,165,.12)}
   #upgradeModal .modal-actions{flex-direction:column}
   #upgradeModal .modal-actions .go{flex:none;width:100%}
@@ -238,7 +240,9 @@
   .prem-form{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px}
   .filebox{flex:1;min-width:240px;border:1.5px dashed var(--line);border-radius:12px;padding:14px 18px;
     background:var(--card);color:var(--muted);font-size:14px;cursor:pointer;text-align:center}
-  .filebox.has{border-color:var(--accent);color:var(--ink)}
+  .filebox.hl{border:2px dashed var(--brand);background:#eef5fc;color:var(--brand-dark);font-weight:600;box-shadow:0 0 0 3px rgba(11,95,165,.12)}
+  body.dark .filebox.hl{background:#16273a}
+  .filebox.has{border:2px solid var(--accent);background:var(--card);color:var(--ink);box-shadow:none;font-weight:600}
   .filebox.drag{border-color:var(--brand);background:#eef3fa}
   .license{border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:14px;width:230px}
   #reviewBtn{white-space:nowrap}
@@ -395,7 +399,7 @@
 
   <div id="premiumView" hidden>
     <details class="info">
-      <summary>ℹ️ Instructions · הוראות שימוש</summary>
+      <summary>ℹ️ How it works · איך זה עובד</summary>
     <div class="prem-intro">
       <div>Fill in your EOC with your reply on every line, upload it (.xlsx), and get back — line by line — <b>what the IB/ITL will expect</b> for each clause and how your written reply looks: a readiness signal, the expected documents/tests/drawings, and a suggested fix. You get a colour-coded annotated workbook to download <b>and a copy by email</b>. You can optionally attach up to 5 supporting files (drawings/docs) for the review to look at — anything you don't attach, it can't see — and your files are processed in memory only, never stored.</div>
       <div class="bi-he">מלאו את ה-EOC עם התשובה שלכם בכל שורה, העלו אותו (.xlsx), וקבלו בחזרה — שורה אחר שורה — <b>מה גוף הבדיקה (IB/ITL) יצפה לו</b> בכל סעיף ואיך התשובה הכתובה שלכם נראית: חיווי מוכנוּת, המסמכים/בדיקות/שרטוטים הצפויים, והצעה לתיקון. תקבלו קובץ מוער בקידוד צבעים להורדה <b>וגם עותק במייל</b>. ניתן לצרף עד 5 קבצים תומכים (שרטוטים/מסמכים) שהבדיקה תוכל לראות — מה שלא תצרפו, היא לא תראה — והקבצים מעובדים בזיכרון בלבד ואינם נשמרים.</div>
@@ -407,7 +411,7 @@
       <button class="ptbtn" id="ptIAA" data-t="IAA">IAA appliances — Chapters 4–6</button>
     </div>
     <div class="prem-form">
-      <label class="filebox" id="filebox">
+      <label class="filebox hl" id="filebox">
         <input id="eocFile" type="file" accept=".xlsx" hidden />
         <span id="fileLabel">Choose or drop your filled EOC .xlsx…</span>
       </label>
@@ -415,7 +419,6 @@
         <input id="supportFiles" type="file" accept="image/*,application/pdf" multiple hidden />
         <span id="supportLabel">Optional: attach up to 5 supporting files (drawings / docs — images or PDF) the review can look at</span>
       </label>
-      <input id="license" class="license" type="text" placeholder="License key (leave blank in dev mode)" autocomplete="off" />
       <button class="go" id="reviewBtn">Review my EOC</button>
     </div>
     <div id="supportFileList" class="filechips"></div>
@@ -1032,8 +1035,7 @@ $('#reviewBtn').onclick=async ()=>{
     const fd=new FormData();
     fd.append('eoc', f); fd.append('formType', reviewType);
     for(const sf of supportFilesArr) fd.append('supporting', sf);
-    const lic=$('#license').value.trim(); if(lic) fd.append('license', lic);
-    const headers={'x-session':session}; if(lic) headers['x-license-key']=lic;
+    const headers={'x-session':session};
     const res=await fetch('/review',{method:'POST', body:fd, headers});
     if(!res.ok){
       const data=await res.json().catch(()=>({}));
