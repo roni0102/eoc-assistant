@@ -218,6 +218,7 @@
   .vbadge{font-size:11px;font-weight:700;letter-spacing:.4px;padding:3px 9px;border-radius:7px;color:#fff}
   .vbadge.ready{background:#2f9e44} .vbadge.attention{background:var(--warn)}
   .vbadge.missing{background:var(--risk)} .vbadge.na{background:#94a3b8}
+  .rowno{font-size:11px;font-weight:600;color:var(--muted);background:#eef2f7;border:1px solid var(--line);border-radius:6px;padding:2px 8px}
   .rev .req{font-size:13px;color:var(--muted);margin:6px 0}
   .rev .line{font-size:14px;margin-top:7px} .rev .line b{color:var(--brand-dark)}
   .rev .line.exp{background:#f0f6fc;border:1px solid #d6e6f5;border-radius:8px;padding:8px 11px}
@@ -706,6 +707,7 @@ function revCard(it){
   const r=it.readiness||'NEEDS_ATTENTION'; const cls=READY_CLS[r]||'attention';
   return `<div class="rev ${cls}">
     <div class="rev-head"><span class="vbadge ${cls}">${esc(READY_LABEL[r]||r)}</span><b>§${esc(it.clause)}</b>
+      ${it.row?`<span class="rowno">EOC row ${esc(String(it.row))}</span>`:''}
       ${it.observed_in_projects?`<span class="freq">${it.observed_in_projects} past EOCs</span>`:''}</div>
     ${it.requirement?`<div class="req"${isHe(it.requirement)?' dir="rtl"':''}>${esc(it.requirement)}</div>`:''}
     ${it.ib_expectations?`<div class="line exp"><b>What the IB/ITL will expect:</b> ${esc(it.ib_expectations)}</div>`:''}

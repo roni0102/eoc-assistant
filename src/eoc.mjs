@@ -45,14 +45,28 @@ export async function readEOC(buffer) {
   const CLAUSE = /^\d+(?:\.\d+)*$/; // real clause number — excludes "Chapter 4 …" banners
   const rows = [];
   let section = '';
+  let chapter = null;      // current chapter number (from "Chapter N" banner rows)
+  let parentClause = null; // last FULL clause, for reconstructing relative sub-items
   for (let r = headerRow + 1; r <= ws.rowCount; r++) {
-    const clause = norm(ws.getCell(r, A).value);
+    const rawClause = norm(ws.getCell(r, A).value);
     const requirement = norm(ws.getCell(r, B).value);
-    if (!clause && !requirement) continue;
-    if (!clause || !CLAUSE.test(clause)) { // section/banner row — remember as context, don't review
-      if (requirement) section = requirement.slice(0, 80);
+    if (!rawClause && !requirement) continue;
+    if (!rawClause || !CLAUSE.test(rawClause)) { // section/banner row — context only, don't review
+      if (requirement) {
+        section = requirement.slice(0, 80);
+        const m = requirement.match(/chapter\s+(\d+)/i);
+        if (m) { chapter = m[1]; parentClause = null; }
+      }
       continue;
     }
+    // Column A often holds a RELATIVE list-item number (e.g. "4", "1", "1.1") that belongs
+    // under the parent clause above it. Reconstruct the full hierarchical clause so each line
+    // shows its real section (e.g. 4.5.4) instead of a bare "4".
+    if (!chapter && rawClause.includes('.')) chapter = rawClause.split('.')[0];
+    let clause = rawClause;
+    if (chapter && rawClause.startsWith(chapter + '.')) parentClause = rawClause; // a full clause
+    else if (parentClause) clause = `${parentClause}.${rawClause}`; // relative item → parent + item
+    else if (chapter) clause = `${chapter}.${rawClause}`; // list directly under a chapter, no sub-clause
     const pingpong = [];
     for (let c = G; c <= Math.max(maxCol, G); c++) {
       const val = norm(ws.getCell(r, c).value);
