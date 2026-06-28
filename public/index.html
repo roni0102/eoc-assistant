@@ -188,7 +188,14 @@
   .pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:6px}
   .price-card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column}
   .price-card.best{border:2px solid var(--brand);box-shadow:0 6px 20px rgba(15,37,64,.08)}
-  .pc-badge{position:absolute;top:-11px;left:18px;background:var(--brand);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;letter-spacing:.02em}
+  .pc-badge{position:absolute;top:-11px;inset-inline-start:18px;background:var(--brand);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;letter-spacing:.02em}
+  .lang-toggle{display:flex;gap:0;justify-content:flex-end;margin:0 0 10px}
+  .lang-toggle button{background:#eef2f7;border:1px solid var(--line);color:var(--muted);font-weight:700;font-size:13px;padding:6px 14px;cursor:pointer}
+  .lang-toggle button:first-child{border-radius:9px 0 0 9px}
+  .lang-toggle button:last-child{border-radius:0 9px 9px 0;border-inline-start:none}
+  .lang-toggle button.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+  #pricingView[dir="rtl"] .lang-toggle{justify-content:flex-start}
+  #pricingView[dir="rtl"] .pc-desc,#pricingView[dir="rtl"] .pc-name{text-align:right}
   .pc-name{font-size:15px;font-weight:700;color:var(--ink)}
   .pc-price{font-size:28px;font-weight:800;color:var(--brand-dark);margin:8px 0 2px}
   .pc-vat{font-size:12px;font-weight:600;color:var(--muted);margin-inline-start:6px}
@@ -358,7 +365,11 @@
   </div>
 
   <div id="pricingView" hidden>
-    <div class="prem-intro">Choose what you need. Secure payment by credit card, Bit, Apple/Google&nbsp;Pay or PayPal via <b>Grow</b>. All prices are shown <b>excluding VAT</b> — VAT (18%) is added at checkout. By purchasing you accept our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
+    <div class="lang-toggle" id="pricingLangToggle">
+      <button type="button" data-pl="en">EN</button>
+      <button type="button" data-pl="he">עברית</button>
+    </div>
+    <div class="prem-intro" id="pricingIntro"></div>
     <div class="pricing-grid" id="pricingGrid"></div>
   </div>
 </div>
@@ -683,26 +694,50 @@ $('#tabFree').onclick=()=>showTab('free');
 $('#tabPrem').onclick=()=>showTab('premium');
 $('#tabExpert').onclick=()=>showTab('expert');
 $('#tabBuy').onclick=()=>showTab('pricing');
+$('#pricingLangToggle').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(!b) return; pricingLang=b.dataset.pl; renderPricing(); });
 
 // ---- billing (Grow) helpers ----
 let ME = { billing:false, pricing:{}, entitlements:{} };
 async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok){ ME=await r.json(); const fl=$('#freeLimitN'); if(fl && ME.freeLimit) fl.textContent=ME.freeLimit; if(!$('#pricingView').hidden) renderPricing(); } }catch{} }
+// Pricing copy in English & Hebrew (brand/acronym terms — EOC, IB/ITL, Grow, Bit, PayPal — stay in English).
+let pricingLang = 'en';
+const PRICING_I18N = {
+  en: {
+    intro:'Choose what you need. Secure payment by credit card, Bit, Apple/Google&nbsp;Pay or PayPal via <b>Grow</b>. All prices are shown <b>excluding VAT</b> — VAT (18%) is added at checkout. By purchasing you accept our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.',
+    vat:'+ VAT', buy:'Buy', best:'★ Best value', soon:'Online checkout is being finalized — purchasing will be enabled shortly.',
+    cards:{
+      subscription:{name:'Monthly membership', desc:'Unlimited questions + the full EOC review included, for 30 days. Plus a quarterly member newsletter with updates and a digest of tricky new questions. Best value.', suffix:' /mo'},
+      questions:{name:'Per question', desc:'Pay for one question at a time. Does not include the full EOC review.', suffix:' /question'},
+      review:{name:'Full EOC Review', desc:'One-time line-by-line review of one uploaded EOC — what the IB will expect, per clause. No membership needed.', suffix:''},
+      consult:{name:'Talk to an expert', desc:'A 30-minute online meeting with an ITL specialist.', suffix:' /30 min'},
+    },
+  },
+  he: {
+    intro:'בחרו את מה שמתאים לכם. תשלום מאובטח בכרטיס אשראי, Bit, Apple/Google&nbsp;Pay או PayPal דרך <b>Grow</b>. כל המחירים מוצגים <b>ללא מע״מ</b> — מע״מ (18%) יתווסף בעת התשלום. ברכישה אתם מאשרים את <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">מדיניות הרכישה והתנאים</a>.',
+    vat:'+ מע״מ', buy:'לרכישה', best:'★ המשתלם ביותר', soon:'התשלום המקוון בהשלמה — הרכישה תיפתח בקרוב.',
+    cards:{
+      subscription:{name:'מנוי חודשי', desc:'שאלות ללא הגבלה + בדיקת EOC מלאה כלולה, ל-30 יום. כולל גם ניוזלטר רבעוני לחברים עם עדכונים ותקציר של שאלות מורכבות חדשות. המשתלם ביותר.', suffix:' לחודש'},
+      questions:{name:'לפי שאלה', desc:'תשלום עבור שאלה אחת בכל פעם. אינו כולל בדיקת EOC מלאה.', suffix:' לשאלה'},
+      review:{name:'בדיקת EOC מלאה', desc:'בדיקה חד-פעמית שורה אחר שורה של EOC שהעליתם — מה גוף הבדיקה (IB/ITL) יצפה לו, לפי סעיף. ללא צורך במנוי.', suffix:''},
+      consult:{name:'שיחה עם מומחה', desc:'פגישת אונליין של 30 דקות עם מומחה ITL.', suffix:' ל-30 דק׳'},
+    },
+  },
+};
 function renderPricing(){
-  const p=(ME&&ME.pricing)||{}; const pack=p.questionsPack||'';
+  const p=(ME&&ME.pricing)||{}; const t=PRICING_I18N[pricingLang]||PRICING_I18N.en; const he=pricingLang==='he';
   const cur=(n)=> n ? `₪${n}` : '—';
-  const cards=[
-    {kind:'subscription', name:'Monthly membership', desc:'Unlimited questions + the full EOC review included, for 30 days. Plus a quarterly member newsletter with updates and a digest of tricky new questions. Best value.', price:p.subscription, suffix:' /mo', best:true},
-    {kind:'questions', name:'Per question', desc:'Pay for one question at a time. Does not include the full EOC review.', price:p.questions, suffix:' /question'},
-    {kind:'review', name:'Full EOC Review', desc:'One-time line-by-line review of one uploaded EOC — what the IB will expect, per clause. No membership needed.', price:p.review},
-    {kind:'consult', name:'Talk to an expert', desc:'A 30-minute online meeting with an ITL specialist.', price:p.consult, suffix:' /30 min'},
-  ];
-  $('#pricingGrid').innerHTML = cards.map(c=>`<div class="price-card${c.best?' best':''}">
-    ${c.best?'<div class="pc-badge">★ Best value</div>':''}
+  $('#pricingView').setAttribute('dir', he?'rtl':'ltr');
+  $('#pricingLangToggle').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.pl===pricingLang));
+  $('#pricingIntro').innerHTML = t.intro;
+  const order=['subscription','questions','review','consult'];
+  $('#pricingGrid').innerHTML = order.map(kind=>{ const c=t.cards[kind]; const price=p[kind]; const best=kind==='subscription';
+    return `<div class="price-card${best?' best':''}">
+    ${best?`<div class="pc-badge">${esc(t.best)}</div>`:''}
     <div class="pc-name">${esc(c.name)}</div>
-    <div class="pc-price">${cur(c.price)}${(c.suffix&&c.price)?`<span>${esc(c.suffix)}</span>`:''}${c.price?'<span class="pc-vat">+ VAT</span>':''}</div>
+    <div class="pc-price">${cur(price)}${(c.suffix&&price)?`<span>${esc(c.suffix)}</span>`:''}${price?`<span class="pc-vat">${esc(t.vat)}</span>`:''}</div>
     <div class="pc-desc">${esc(c.desc)}</div>
-    <button class="go pay" onclick="goCheckout('${c.kind}')">Buy</button>
-  </div>`).join('') + (ME.billing?'':`<div class="pc-note">Online checkout is being finalized — purchasing will be enabled shortly.</div>`);
+    <button class="go pay" onclick="goCheckout('${kind}')">${esc(t.buy)}</button>
+  </div>`; }).join('') + (ME.billing?'':`<div class="pc-note">${esc(t.soon)}</div>`);
 }
 function price(kind){ const p=(ME&&ME.pricing)||{}; return p[kind] ? `₪${p[kind]}` : ''; }
 function payBtn(kind, label){ return `<button class="go pay" onclick="goCheckout('${kind}')">${label}${price(kind)?` — ${price(kind)}`:''}</button>`; }
