@@ -189,6 +189,7 @@
   .price-card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column}
   .price-card.best{border:2px solid var(--brand);box-shadow:0 6px 20px rgba(15,37,64,.08)}
   .pc-badge{position:absolute;top:-11px;inset-inline-start:18px;background:var(--brand);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;letter-spacing:.02em}
+  .bi-he{direction:rtl;text-align:right;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
   .lang-toggle{display:flex;gap:0;justify-content:flex-end;margin:0 0 10px}
   .lang-toggle button{background:#eef2f7;border:1px solid var(--line);color:var(--muted);font-weight:700;font-size:13px;padding:6px 14px;cursor:pointer}
   .lang-toggle button:first-child{border-radius:9px 0 0 9px}
@@ -312,9 +313,16 @@
     <div id="askFileList" class="filechips"></div>
     <div class="hint">Ask a question, then keep the conversation going with follow-ups. Answers are generic and anonymous. Attach a drawing or PDF to ask about it.</div>
     <div class="disclaimer">
-      <b>Reference guidance only.</b> Past accepted replies <b>do not guarantee</b> the same response from the Inspection Body (IB) or ITL — every submission is assessed on its own merits.
-      The <b>free plan includes <span id="freeLimitN">10</span> questions</b> per user; beyond that, a per-question payment or a monthly subscription is required.
-      Your questions and interactions are stored and used <b>anonymously</b> to improve this assistant, and may be shown <b>anonymously</b> to other clients — never revealing you, your company, site, or project.
+      <div>
+        <b>Reference guidance only.</b> Past accepted replies <b>do not guarantee</b> the same response from the Inspection Body (IB) or ITL — every submission is assessed on its own merits.
+        The <b>free plan includes <span id="freeLimitN">10</span> questions</b> per user; beyond that, a per-question payment or a monthly subscription is required.
+        Your questions and interactions are stored and used <b>anonymously</b> to improve this assistant, and may be shown <b>anonymously</b> to other clients — never revealing you, your company, site, or project.
+      </div>
+      <div class="bi-he">
+        <b>מידע מנחה בלבד.</b> תשובות שהתקבלו בעבר <b>אינן מבטיחות</b> תגובה זהה מגוף הבדיקה (IB) או מ-ITL — כל הגשה נבחנת לגופה.
+        <b>התוכנית החינמית כוללת 10 שאלות</b> למשתמש; מעבר לכך נדרש תשלום לפי שאלה או מנוי חודשי.
+        השאלות והאינטראקציות שלכם נשמרות ומשמשות <b>באופן אנונימי</b> לשיפור העוזר, ועשויות להיות מוצגות <b>באופן אנונימי</b> ללקוחות אחרים — מבלי לחשוף אתכם, את החברה, האתר או הפרויקט שלכם.
+      </div>
     </div>
     <div class="chips" id="chips"></div>
     <div id="results"></div>
@@ -326,7 +334,10 @@
   </div>
 
   <div id="premiumView" hidden>
-    <div class="prem-intro">Fill in your EOC with your reply on every line, upload it (.xlsx), and get back — line by line — <b>what the IB/ITL will expect</b> for each clause and how your written reply looks: a readiness signal, the expected documents/tests/drawings, and a suggested fix. You get a colour-coded annotated workbook to download <b>and a copy by email</b>. <b>Note:</b> the review reads your typed replies only — it does <b>not</b> see your attached documents or drawings — and your file is processed in memory only, never stored.</div>
+    <div class="prem-intro">
+      <div>Fill in your EOC with your reply on every line, upload it (.xlsx), and get back — line by line — <b>what the IB/ITL will expect</b> for each clause and how your written reply looks: a readiness signal, the expected documents/tests/drawings, and a suggested fix. You get a colour-coded annotated workbook to download <b>and a copy by email</b>. You can optionally attach up to 5 supporting files (drawings/docs) for the review to look at — anything you don't attach, it can't see — and your files are processed in memory only, never stored.</div>
+      <div class="bi-he">מלאו את ה-EOC עם התשובה שלכם בכל שורה, העלו אותו (.xlsx), וקבלו בחזרה — שורה אחר שורה — <b>מה גוף הבדיקה (IB/ITL) יצפה לו</b> בכל סעיף ואיך התשובה הכתובה שלכם נראית: חיווי מוכנוּת, המסמכים/בדיקות/שרטוטים הצפויים, והצעה לתיקון. תקבלו קובץ מוער בקידוד צבעים להורדה <b>וגם עותק במייל</b>. ניתן לצרף עד 5 קבצים תומכים (שרטוטים/מסמכים) שהבדיקה תוכל לראות — מה שלא תצרפו, היא לא תראה — והקבצים מעובדים בזיכרון בלבד ואינם נשמרים.</div>
+    </div>
     <div class="prem-type">
       <span class="pt-label">I'm reviewing an EOC for:</span>
       <button class="ptbtn active" id="ptPiping" data-t="Piping">Piping — Chapter 7</button>
@@ -700,7 +711,7 @@ $('#pricingLangToggle').addEventListener('click',(e)=>{ const b=e.target.closest
 let ME = { billing:false, pricing:{}, entitlements:{} };
 async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok){ ME=await r.json(); const fl=$('#freeLimitN'); if(fl && ME.freeLimit) fl.textContent=ME.freeLimit; if(!$('#pricingView').hidden) renderPricing(); } }catch{} }
 // Pricing copy in English & Hebrew (brand/acronym terms — EOC, IB/ITL, Grow, Bit, PayPal — stay in English).
-let pricingLang = 'en';
+let pricingLang = 'he'; // Hebrew is the default on the pricing tab
 const PRICING_I18N = {
   en: {
     intro:'Choose what you need. Secure payment by credit card, Bit, Apple/Google&nbsp;Pay or PayPal via <b>Grow</b>. All prices are shown <b>excluding VAT</b> — VAT (18%) is added at checkout. By purchasing you accept our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.',
