@@ -728,7 +728,7 @@ function renderReviewResult(data, out){
     ${scoreCard(s.N_A,'N/A','na')}
     ${scoreCard(s.MISSING,'Missing','missing')}
   </div>`;
-  const head=`<div class="meta-sm"><b>${esc(data.type)} EOC</b> · ${data.answered_rows} answered rows · reviewed ${data.reviewed_rows}${data.capped?` (first ${data.cap} — raise the limit for the full audit)`:''}${data.dev_mode?' · dev mode':''}</div>`;
+  const head=`<div class="meta-sm"><b>${esc(data.type)} EOC</b> · reviewed <b>${data.assessed}</b> of <b>${data.requirements}</b> requirement rows${data.structural?` · ${data.structural} structural/header rows skipped`:''}${data.not_reviewed?` · ${data.not_reviewed} not reviewed (cap)`:''}${data.dev_mode?' · dev mode':''}</div>`;
   const mism = data.type_mismatch ? `<div class="warn">Heads-up: you chose <b>${esc(data.type)}</b>, but the file looks like a <b>${esc(data.detected_type)}</b> EOC — it was reviewed as <b>${esc(data.type)}</b>. If that's wrong, switch the type above and re-run.</div>` : '';
   const dl=`<a class="dl" href="/review/download/${data.download_token}">⬇ Download annotated EOC (.xlsx)</a>`;
   const emailed = data.emailed ? `<div class="emailed">✓ A copy was emailed to ${esc(data.email_to)}.</div>` : '';

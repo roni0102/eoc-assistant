@@ -86,10 +86,28 @@ const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i +=
  * reviewEOC({ type, rows, limit, onProgress }) -> { scoreboard, items, updates }
  * items: per-row review for display. updates: ready for eoc.writeEOC (annotated xlsx).
  */
+// non-requirement rows that must NOT be counted as Missing (notes, list/section intros).
+const isStructural = (req, clause) => {
+  const s = String(req || '').trim();
+  if (!s) return true;
+  if (/^(note|notes|nb|הערה|הערות)\b/i.test(s)) return true;
+  if (/\.0$/.test(String(clause || '')) && /(minimum requirements|file review|list of|the following|תוכן|רשימת)\b/i.test(s)) return true;
+  return false;
+};
+const naVerdict = (r) => /^n\/?a$/i.test(String(r.verdict || '').trim());
+// already satisfied: an explicit pass verdict, or the IB's last ping-pong entry closed/accepted it.
+const ibClosed = (r) => {
+  if (/^(pass|accept|closed|אושר|סגור|תקין)/i.test(String(r.verdict || '').trim())) return true;
+  const itl = (r.pingpong || []).filter((p) => p.party === 'ITL');
+  const last = itl[itl.length - 1];
+  return !!(last && /^(closed|accepted|pass|item closed|אושר|סגור|תקין)/i.test(String(last.content || '').trim()));
+};
+const isOpen = (r) => !naVerdict(r) && !ibClosed(r);
+
 export async function reviewEOC({ type, rows, limit, onProgress }) {
-  let reviewable = rows.filter((r) => r.reviewable);
+  // LLM-review only OPEN, answered, non-structural requirement rows (saves tokens + correctness).
+  let reviewable = rows.filter((r) => r.reviewable && r.requirement && r.clause && !isStructural(r.requirement, r.clause) && isOpen(r));
   if (limit) reviewable = reviewable.slice(0, limit);
-  const byRow = new Map(rows.map((r) => [r.row, r]));
   const reviews = new Map();
 
   const batches = chunk(reviewable, 6);
@@ -118,43 +136,53 @@ export async function reviewEOC({ type, rows, limit, onProgress }) {
   const he = (s) => /[֐-׿]/.test(String(s || ''));
   const looksSpecific = (a) => { const s = String(a || ''); return s.length >= 12 && (/\d/.test(s) || /(cert|certificate|report|drawing|datasheet|p&id|appendix|\brev\b|תעודה|דו"?ח|תרשים|מסמך|נספח|אישור)/i.test(s)); };
 
-  // 1) per-row assessment (LLM for answered rows; canonical request for missing rows), with the
-  //    safety-critical / statutory guardrail (raise recall on high-stakes items, keep precision).
+  // per-row bucketing (Fix 2): respect the EOC's own N/A and IB-closure; exclude structural rows
+  // from Missing; only genuinely-required open/unanswered items become Missing / Needs-attention.
   const items = [];
+  let structural = 0, notReviewed = 0;
   for (const r of rows) {
+    if (!r.requirement || !r.clause) continue; // not an item row
     const rule = ruleHint(r.clause, r.requirement);
     const critical = !!rule && (rule.severity === 'safety' || rule.severity === 'statutory');
     const inHe = he(r.requirement);
-    if (!r.answered) {
-      if (!r.requirement || !r.clause) continue;
+    const base = { row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, next_itl_col: r.next_itl_col, severity: rule?.severity || 'standard', observed_in_projects: getClause(r.clause)?.corpus_count || 0 };
+
+    if (isStructural(r.requirement, r.clause)) { structural++; continue; }                 // note / header / intro
+    if (naVerdict(r)) { items.push({ ...base, readiness: 'N/A', ib_expectations: inHe ? 'הסעיף סומן כלא רלוונטי.' : 'Marked not applicable.', reply_assessment: '', suggested_fix: '', client_answer: r.client_answer || '' }); continue; }
+    if (ibClosed(r)) { items.push({ ...base, readiness: 'READY', ib_expectations: inHe ? 'הסעיף כבר התקבל / נסגר בטופס.' : 'Already accepted / closed in the EOC.', reply_assessment: '', suggested_fix: '', client_answer: r.client_answer || '' }); continue; }
+
+    if (!r.answered) { // required item with no acceptable answer → MISSING (canonical bilingual request)
       const exp = (rule && rule.canonical_ib_request) || (inHe ? 'הגוף הבודק יצפה לתשובה מתועדת עם ראיות תומכות לסעיף זה.' : 'The IB will expect a documented reply with supporting evidence for this clause.');
-      items.push({ row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, next_itl_col: r.next_itl_col, severity: rule?.severity || 'standard', readiness: 'MISSING', ib_expectations: exp, reply_assessment: inHe ? 'לא ניתנה תשובה לשורה זו.' : 'No reply provided for this line.', suggested_fix: inHe ? 'יש להגיש את המסמך/הראיה הנדרשים ותשובה כתובה לסעיף זה.' : 'Provide the required document/evidence and a written reply for this clause.', client_answer: '', observed_in_projects: getClause(r.clause)?.corpus_count || 0 });
+      items.push({ ...base, readiness: 'MISSING', ib_expectations: exp, reply_assessment: inHe ? 'לא ניתנה תשובה לשורה זו.' : 'No reply provided for this line.', suggested_fix: inHe ? 'יש להגיש את המסמך/הראיה הנדרשים ותשובה כתובה לסעיף זה.' : 'Provide the required document/evidence and a written reply for this clause.', client_answer: '' });
       continue;
     }
     const rev = reviews.get(r.row);
-    if (!rev) continue;
+    if (!rev) { notReviewed++; continue; } // answered but beyond the cap / LLM failed
     let readiness = normReadiness(rev.readiness);
     let exp = rev.ib_expectations || '';
     let fix = rev.suggested_fix || '';
     if (critical) {
       if (!exp) exp = rule.canonical_ib_request;
-      // never quietly pass a safety-critical item whose reply doesn't NAME the specific evidence
       if (readiness === 'READY' && !looksSpecific(r.client_answer)) { readiness = 'NEEDS_ATTENTION'; if (!fix) fix = rule.canonical_ib_request; }
     }
-    items.push({ row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, next_itl_col: r.next_itl_col, severity: rule?.severity || 'standard', readiness, ib_expectations: exp, reply_assessment: rev.reply_assessment || '', suggested_fix: fix, client_answer: r.client_answer || '', observed_in_projects: getClause(r.clause)?.corpus_count || 0 });
+    items.push({ ...base, readiness, ib_expectations: exp, reply_assessment: rev.reply_assessment || '', suggested_fix: fix, client_answer: r.client_answer || '' });
   }
 
-  // 2) section-level propagation of cross-cutting status across a block of rows.
-  propagateSection(items);
+  propagateSection(items); // cross-cutting status propagation across a block
 
-  // 3) scoreboard + workbook updates from the FINAL items.
-  const score = { READY: 0, NEEDS_ATTENTION: 0, N_A: 0, MISSING: 0, total: 0 };
+  const score = { READY: 0, NEEDS_ATTENTION: 0, N_A: 0, MISSING: 0 };
   const updates = [];
   for (const it of items) {
-    score[scoreKey[it.readiness]]++; score.total++;
+    score[scoreKey[it.readiness]]++;
     const colD = `${LABEL[it.readiness]} — IB will expect: ${it.ib_expectations}${it.reply_assessment ? ` | Reply: ${it.reply_assessment}` : ''}`;
     updates.push({ row: it.row, col_D: colD, col_E: LABEL[it.readiness], next_itl_col: it.next_itl_col, itl_reply: it.suggested_fix || (it.readiness === 'READY' ? 'Reply looks complete — ensure the named evidence is attached.' : '') });
   }
+  // reconciliation: assessed + not_reviewed (+ structural) accounts for every clause row in scope.
+  score.not_reviewed = notReviewed;
+  score.structural = structural;
+  score.assessed = items.length;                          // rows that got a bucket
+  score.requirements = items.length + notReviewed;        // real requirement rows in scope (excl. structural)
+  score.total = items.length + notReviewed + structural;  // every clause+requirement row seen
   items.sort((a, b) => String(a.clause).localeCompare(String(b.clause), undefined, { numeric: true }));
   return { scoreboard: score, items, updates };
 }

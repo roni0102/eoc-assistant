@@ -289,35 +289,34 @@ app.post('/review', upload.single('eoc'), requireGate, async (req, res) => {
       return res.status(400).json({ error: `No ${type === 'Piping' ? 'Chapter 7 (Piping)' : 'Chapter 4–6 (IAA appliance)'} lines were found in this file${detected !== type ? ` — it looks like a ${detected} EOC, so switch the type above and re-run` : ''}.` });
     }
     const answered = scoped.filter((r) => r.answered).length;
-    // Optional cap (transparent) so a huge EOC doesn't hit the request timeout.
-    const limit = Math.min(parseInt(req.body?.limit || '', 10) || (parseInt(process.env.REVIEW_MAX_ROWS || '', 10) || 50), 400);
-    // Stream progress to the browser as NDJSON: {progress:{done,total}} lines while the LLM
-    // works through the rows, then one final {result:{…}} line. (Drives the live progress bar.)
+    // Default: review the WHOLE form. An optional cap (req.body.limit or REVIEW_MAX_ROWS) only
+    // applies if explicitly set; streaming keeps the connection alive for large forms.
+    const reqLimit = parseInt(req.body?.limit || '', 10) || parseInt(process.env.REVIEW_MAX_ROWS || '', 10) || 0;
+    const limit = reqLimit ? Math.min(reqLimit, 5000) : undefined;
     res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('X-Accel-Buffering', 'no'); // ask proxies not to buffer the stream
     const writeLine = (o) => { try { res.write(JSON.stringify(o) + '\n'); } catch {} };
-    writeLine({ progress: { done: 0, total: Math.min(answered, limit) } });
+    writeLine({ progress: { done: 0, total: limit ? Math.min(answered, limit) : answered } });
     const report = await reviewEOC({ type, rows: scoped, limit, onProgress: (done, total) => writeLine({ progress: { done, total } }) });
     const annotated = await writeEOC(req.file.buffer, report.updates);
     const token = cacheDownload(annotated, `EOC-${type}-review.xlsx`);
     if (billed) billing.useReview(revEmail); // consume one paid review credit on success
     leads.markTier(req.sessionToken, 'premium'); // record that this lead used premium
-    const reviewedCount = report.items.filter((i) => i.readiness && i.readiness !== 'MISSING').length;
+    const sb = report.scoreboard;
     // Email a copy to the client (graceful: no-op unless SMTP is configured).
     let emailed = false;
     const to = leads.emailForToken(req.sessionToken);
-    if (mailAvailable()) emailed = await sendReviewEmail({ to, type, scoreboard: report.scoreboard, attachment: annotated, filename: `EOC-${type}-review.xlsx` });
-    console.log(`[review] type=${type} detected=${detected} rows=${eoc.rows.length} answered=${answered} reviewed=${reviewedCount} emailed=${emailed} dev=${devMode} ms=${Date.now() - t0}`);
+    if (mailAvailable()) emailed = await sendReviewEmail({ to, type, scoreboard: sb, attachment: annotated, filename: `EOC-${type}-review.xlsx` });
+    console.log(`[review] type=${type} detected=${detected} scope=${scoped.length} assessed=${sb.assessed} requirements=${sb.requirements} structural=${sb.structural} notReviewed=${sb.not_reviewed} emailed=${emailed} dev=${devMode} ms=${Date.now() - t0}`);
     writeLine({ result: {
       type, detected_type: detected, type_mismatch: mismatch,
       sheet: eoc.sheetName,
-      total_item_rows: eoc.rows.length,
       answered_rows: answered,
-      reviewed_rows: reviewedCount,
-      capped: answered > limit,
-      cap: limit,
-      scoreboard: report.scoreboard,
+      assessed: sb.assessed, requirements: sb.requirements, structural: sb.structural,
+      not_reviewed: sb.not_reviewed, total_rows: sb.total,
+      capped: sb.not_reviewed > 0,
+      scoreboard: sb,
       items: report.items,
       download_token: token,
       emailed, email_to: emailed ? to : '',
