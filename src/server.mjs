@@ -140,11 +140,24 @@ app.get('/leads/export', (req, res) => {
   res.send(csv);
 });
 
-// Shared, anonymized Q&A — questions other clients have asked (a growing FAQ).
+// Shared, anonymized Q&A — questions other clients have asked (a growing FAQ). Only
+// publicly-eligible (auto-anonymized or admin-approved) entries are returned.
 app.get('/qa/recent', rateLimit, (req, res) => {
   const q = String(req.query?.q ?? '').trim();
   const items = q ? qalog.search(q, 12) : qalog.recent(20);
-  res.json({ items, total: qalog.stats().total });
+  res.json({ items, total: qalog.stats().public });
+});
+
+// Admin-only curation of the public Q&A panel (manual approve/hide). Gated by the admin key —
+// lets the owner promote a redacted-but-safe question, or hide one. No-op unless ADMIN_KEY is set.
+app.get('/qa/pending', rateLimit, (req, res) => {
+  if (!billing.adminKeyValid(req.get('x-admin-key'))) return res.status(403).json({ error: 'forbidden' });
+  res.json({ items: qalog.pending(50) });
+});
+app.post('/qa/moderate', rateLimit, (req, res) => {
+  if (!billing.adminKeyValid(req.get('x-admin-key'))) return res.status(403).json({ error: 'forbidden' });
+  const ok = qalog.setApproval(String(req.body?.id || ''), req.body?.approved === true);
+  res.json({ ok });
 });
 
 // Translate an answer to Hebrew or Russian on demand (per-answer toggle in the UI).
