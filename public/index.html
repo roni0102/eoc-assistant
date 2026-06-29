@@ -519,24 +519,22 @@
 
 <div id="checkoutModal" class="modal" hidden>
   <div class="modal-card">
-    <div class="modal-h">Checkout</div>
+    <div class="lang-toggle" id="coLangToggle">
+      <button type="button" data-cl="en">EN</button>
+      <button type="button" data-cl="he">עברית</button>
+    </div>
+    <div class="modal-h" id="coTitle">תשלום</div>
     <div id="coSummary" class="co-summary"></div>
     <div class="co-grid">
       <input id="coFirst" type="text" placeholder="First name" autocomplete="given-name" />
       <input id="coLast" type="text" placeholder="Last name" autocomplete="family-name" />
       <input id="coPhone" type="tel" inputmode="numeric" placeholder="Phone (digits only, no prefix)" autocomplete="tel" />
-      <select id="coCountry" autocomplete="country">
-        <option value="">Country…</option>
-        <option value="Israel">Israel</option>
-        <option value="United States">United States</option>
-        <option value="United Kingdom">United Kingdom</option>
-        <option value="Other">Other</option>
-      </select>
+      <select id="coCountry" autocomplete="country"></select>
     </div>
     <input id="coCompany" type="text" placeholder="Company (for the invoice)" autocomplete="organization" style="width:100%;margin-bottom:10px" />
     <input id="coEmail" type="email" placeholder="Email" autocomplete="email" style="width:100%;margin-bottom:10px" />
     <label class="policy-chk"><input type="checkbox" id="coTerms" />
-      <span>I have read and accept the <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</span></label>
+      <span id="coTermsText"></span></label>
     <div id="coNote" class="expert-note" style="margin-top:8px"></div>
     <div class="modal-actions">
       <button class="go" id="coContinue">Continue to payment</button>
@@ -949,15 +947,37 @@ $('#bugSend').onclick=async ()=>{
 $('#upgradeCancel').onclick = closeUpgrade;
 $('#upgradeModal').addEventListener('click', (e)=>{ if(e.target.id==='upgradeModal') closeUpgrade(); });
 // Checkout: collect the customer's details + a mandatory terms acceptance, then start payment.
-const CO_NAMES={subscription:'Monthly membership',questions:'Per question',review:'Full EOC Review',consult:'Talk to an expert'};
-let coKind=null;
+// Bilingual — Hebrew default, EN toggle (mirrors the pricing tab). Country option VALUES stay in
+// English (sent to Morning / on the invoice); only the labels are translated.
+const CO_COUNTRIES=[{v:'Israel',en:'Israel',he:'ישראל'},{v:'United States',en:'United States',he:'ארצות הברית'},{v:'United Kingdom',en:'United Kingdom',he:'בריטניה'},{v:'Other',en:'Other',he:'אחר'}];
+const CO_I18N={
+  en:{ title:'Checkout', first:'First name', last:'Last name', phone:'Phone (digits only, no prefix)', countryPH:'Country…', company:'Company (for the invoice)', email:'Email',
+    terms:'I have read and accept the <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.', cont:'Continue to payment', cancel:'Cancel',
+    incl:'incl. VAT', before:'before VAT', eName:'Please enter your first and last name.', ePhone:'Please enter a valid phone number (digits only).', eCountry:'Please select your country.', eEmail:'Please enter a valid email.', eTerms:'Please accept the Purchasing Policy & Terms to continue.', eGeneric:'Payments are not available right now.', eNet:'Could not start payment. Please try again.' },
+  he:{ title:'תשלום', first:'שם פרטי', last:'שם משפחה', phone:'טלפון (ספרות בלבד, ללא קידומת)', countryPH:'מדינה…', company:'חברה (עבור החשבונית)', email:'אימייל',
+    terms:'קראתי ואני מאשר/ת את <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">מדיניות הרכישה והתנאים</a>.', cont:'המשך לתשלום', cancel:'ביטול',
+    incl:'כולל מע״מ', before:'לפני מע״מ', eName:'נא להזין שם פרטי ושם משפחה.', ePhone:'נא להזין מספר טלפון תקין (ספרות בלבד).', eCountry:'נא לבחור מדינה.', eEmail:'נא להזין כתובת אימייל תקינה.', eTerms:'יש לאשר את מדיניות הרכישה והתנאים כדי להמשיך.', eGeneric:'התשלום אינו זמין כרגע.', eNet:'לא ניתן להתחיל את התשלום. נסו שוב.' },
+};
+let coLang='he', coKind=null;
+function renderCoSummary(){ if(!coKind) return; const t=CO_I18N[coLang]; const p=(ME&&ME.pricing)||{}; const incl=(p.incl&&p.incl[coKind])||p[coKind]; const ex=(p.ex&&p.ex[coKind]);
+  const nm=(PRICING_I18N[coLang]&&PRICING_I18N[coLang].cards[coKind]&&PRICING_I18N[coLang].cards[coKind].name)||coKind;
+  $('#coSummary').innerHTML=`<b>${esc(nm)}</b> — ₪${incl} ${t.incl}${ex?` <span class="muted">(₪${ex} ${t.before})</span>`:''}`; }
+function applyCheckoutLang(lang){ coLang=lang; const t=CO_I18N[lang]; const he=lang==='he';
+  $('#checkoutModal .modal-card').setAttribute('dir', he?'rtl':'ltr');
+  $('#coLangToggle').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.cl===lang));
+  $('#coTitle').textContent=t.title; $('#coFirst').placeholder=t.first; $('#coLast').placeholder=t.last;
+  $('#coPhone').placeholder=t.phone; $('#coCompany').placeholder=t.company; $('#coEmail').placeholder=t.email;
+  $('#coCountry').innerHTML=`<option value="">${t.countryPH}</option>`+CO_COUNTRIES.map(c=>`<option value="${c.v}">${he?c.he:c.en}</option>`).join('');
+  $('#coTermsText').innerHTML=t.terms; $('#coContinue').textContent=t.cont; $('#coCancel').textContent=t.cancel;
+  renderCoSummary();
+}
+$('#coLangToggle').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) applyCheckoutLang(b.dataset.cl); });
 function goCheckout(kind){
   coKind=kind;
-  const p=(ME&&ME.pricing)||{}; const incl=(p.incl&&p.incl[kind])||p[kind]; const ex=(p.ex&&p.ex[kind]);
-  $('#coSummary').innerHTML = `<b>${esc(CO_NAMES[kind]||kind)}</b> — ₪${incl} incl. VAT${ex?` <span class="muted">(₪${ex} before VAT)</span>`:''}`;
   ['coFirst','coLast','coPhone','coCountry','coCompany'].forEach(id=>{ const el=$('#'+id); if(el) el.value=''; });
   $('#coEmail').value=(ME&&ME.email)||'';
   $('#coTerms').checked=false; $('#coNote').textContent=''; $('#coNote').className='expert-note';
+  applyCheckoutLang(coLang); // default Hebrew
   $('#checkoutModal').hidden=false; $('#coFirst').focus();
 }
 function closeCheckout(){ $('#checkoutModal').hidden=true; coKind=null; }
@@ -965,23 +985,23 @@ $('#coCancel').onclick=closeCheckout;
 $('#checkoutModal').addEventListener('click',e=>{ if(e.target.id==='checkoutModal') closeCheckout(); });
 $('#coContinue').onclick=async ()=>{
   if(!coKind) return;
-  const note=$('#coNote'); const fail=(m)=>{ note.className='expert-note err'; note.textContent=m; };
+  const t=CO_I18N[coLang]; const note=$('#coNote'); const fail=(m)=>{ note.className='expert-note err'; note.textContent=m; };
   const customer={ firstName:$('#coFirst').value.trim(), lastName:$('#coLast').value.trim(),
     phone:$('#coPhone').value.replace(/[^\d]/g,''), country:$('#coCountry').value,
     company:$('#coCompany').value.trim(), email:$('#coEmail').value.trim() };
-  if(!customer.firstName||!customer.lastName) return fail('Please enter your first and last name.');
-  if(customer.phone.length<7) return fail('Please enter a valid phone number (digits only).');
-  if(!customer.country) return fail('Please select your country.');
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(customer.email)) return fail('Please enter a valid email.');
-  if(!$('#coTerms').checked) return fail('Please accept the Purchasing Policy & Terms to continue.');
+  if(!customer.firstName||!customer.lastName) return fail(t.eName);
+  if(customer.phone.length<7) return fail(t.ePhone);
+  if(!customer.country) return fail(t.eCountry);
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(customer.email)) return fail(t.eEmail);
+  if(!$('#coTerms').checked) return fail(t.eTerms);
   const btn=$('#coContinue'); const old=btn.textContent; btn.disabled=true; btn.textContent='…'; note.className='expert-note'; note.textContent='';
   try{
     const r=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({kind:coKind, policy:true, customer})});
     const d=await r.json().catch(()=>({}));
     if(r.status===401 && d.gate){ closeCheckout(); openGate(); return; }
-    if(r.ok && d.url){ window.location.href=d.url; return; } // → Grow hosted checkout
-    fail(d.error||'Payments are not available right now.');
-  }catch(e){ fail('Could not start payment. Please try again.'); }
+    if(r.ok && d.url){ window.location.href=d.url; return; } // → Morning hosted payment page
+    fail(d.error||t.eGeneric);
+  }catch(e){ fail(t.eNet); }
   finally{ btn.disabled=false; btn.textContent=old; }
 };
 function toast(msg, kind){
