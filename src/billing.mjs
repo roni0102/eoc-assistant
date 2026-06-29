@@ -45,7 +45,7 @@ const DESC = {
 };
 // VAT (Israel, 18% as of 2025). Prices above are ex-VAT; the customer is charged inclusive of VAT.
 const VAT_RATE = Number(process.env.VAT_RATE || 0.18);
-export const withVat = (n) => Math.round((Number(n) || 0) * (1 + VAT_RATE) * 100) / 100;
+export const withVat = (n) => Math.ceil((Number(n) || 0) * (1 + VAT_RATE)); // round UP to whole shekels
 export const pricing = () => ({
   ...PRICE,
   incl: Object.fromEntries(Object.entries(PRICE).map(([k, v]) => [k, withVat(v)])), // VAT-inclusive prices to display
