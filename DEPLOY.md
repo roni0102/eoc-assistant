@@ -29,9 +29,39 @@ base, ~1.3 MB each) **are** committed — the server reads them at runtime, so t
    - `EOC_MODEL` — optional; defaults to `claude-opus-4-8`.
 4. Deploy. Your site is at `https://eoc-assistant.onrender.com` (or your custom domain).
 
-> **Plan note:** persistent disks need a paid plan (≥ Starter). On the free plan, drop the
-> `disk:` block — the app still runs, but `leads.jsonl` / `qa_log.jsonl` reset on each redeploy
-> (point `addLead()` at a CRM/DB instead if you go that route).
+## 2a. Make data durable — persistent disk (DO THIS BEFORE GOING LIVE WITH PAYMENTS)
+
+All runtime state is written under **`DATA_DIR`** (default `./data`). On the **free** plan there is
+no persistent disk, so every redeploy/restart **wipes** these six files:
+
+| File | What it holds | Why it matters |
+|---|---|---|
+| `entitlements.json` | paid access (subscriptions, review/consult credits) | **paying customers lose access on each deploy** ⚠️ |
+| `pending_payments.json` | in-flight payment → entitlement mapping | a payment mid-flight could miss its grant |
+| `usage.json` | per-email free-question cap | the 5-question cap resets |
+| `sessions.json` | active gate tokens | users have to re-enter their details |
+| `leads.jsonl` | captured leads | *(also mirrored to your Google Sheet, so safe)* |
+| `qa_log.jsonl` | the anonymized shared-Q&A / newsletter history | the FAQ can't grow |
+
+**Set this up before turning on Morning payments**, so paid entitlements persist from day one.
+
+**Steps (existing service, in the Render dashboard):**
+1. **eoc-assistant → Settings → Instance Type →** upgrade to **Starter** (disks require a paid
+   instance; ~$7/mo, and it stays always-on instead of sleeping).
+2. **eoc-assistant → Disks → Add Disk:**
+   - **Name:** `data`  ·  **Mount Path:** `/var/data`  ·  **Size:** `1 GB`
+3. **eoc-assistant → Environment →** add `DATA_DIR = /var/data`.
+4. **Save** → the service redeploys with the disk mounted. From then on everything persists at
+   `/var/data/{entitlements,pending_payments,usage,sessions}.json` + `{leads,qa_log}.jsonl`.
+
+**Notes**
+- A service with a disk runs as a **single instance** (no horizontal autoscaling) — fine here.
+- Free-tier data isn't migrated, but nothing critical is lost: leads/expert/consent/bug already
+  mirror to your Google Sheet, and there are no real paid entitlements yet — which is exactly why
+  **now** (pre-launch) is the moment to switch.
+- `render.yaml` has a ready **starter + disk + DATA_DIR** block (commented) — uncomment it if you
+  prefer to manage the plan from the Blueprint instead of the dashboard.
+- To revert: remove the disk + `DATA_DIR` (back to ephemeral free).
 
 ## 3. Updating the knowledge base
 `build:kb` / `build:standard` read the source EOC archive and the SI 6464 PDFs, which live on

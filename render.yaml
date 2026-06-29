@@ -5,14 +5,23 @@ services:
   - type: web
     name: eoc-assistant
     runtime: node
-    plan: free               # $0 — sleeps when idle; leads/Q&A reset on redeploy.
-                             # To make leads permanent later: change to "starter" and
-                             # re-add the DATA_DIR env + disk block (see DEPLOY.md).
+    plan: free               # $0 — sleeps when idle; ALL data resets on redeploy (see DEPLOY.md §2a).
+    # ── DURABLE DATA: to persist entitlements/cap/sessions/leads/Q&A (do BEFORE going live with
+    #    payments) either use the Render dashboard (DEPLOY.md §2a) OR uncomment the `plan: starter`
+    #    + `disk:` block here and the DATA_DIR env var below, then re-sync the Blueprint
+    #    (upgrades to a paid Starter instance, ~$7/mo):
+    # plan: starter
+    # disk:
+    #   name: data
+    #   mountPath: /var/data
+    #   sizeGB: 1
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeploy: true         # redeploy on every push to the connected branch
     envVars:
+      # - key: DATA_DIR          # uncomment WITH the disk block above to persist runtime data
+      #   value: /var/data
       # KB artifacts (data/kb.json, data/standard.json) ship in the repo and are
       # read from there. On free there is no persistent disk, so leads + shared Q&A
       # are written under the app's data/ folder and reset on redeploy.
