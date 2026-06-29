@@ -384,7 +384,7 @@
 
 <div class="wrap">
   <header class="hero">
-    <div class="tag">SI 6464 (2017), Chapters 4–7 — natural-gas piping &amp; industrial appliances (steam boilers, furnaces, water heaters, turbines &amp; more). Ask by clause (e.g. 7.2.1.5) or describe an issue; answers draw on past EOCs, fully anonymized.</div>
+    <div class="tag" id="heroTag">SI 6464 (2017), Chapters 4–7 — natural-gas piping &amp; industrial appliances (steam boilers, furnaces, water heaters, turbines &amp; more). Ask by clause (e.g. 7.2.1.5) or describe an issue; answers draw on past EOCs, fully anonymized.</div>
   </header>
 
   <div id="freeView">
@@ -831,6 +831,7 @@ function showTab(which){
   $('#premiumView').hidden = which!=='premium';
   $('#expertView').hidden = which!=='expert';
   $('#pricingView').hidden = which!=='pricing';
+  $('#heroTag').hidden = which==='pricing'; // hide the SI 6464 tagline on the pricing tab
   if(which==='pricing') renderPricing();
 }
 $('#tabFree').onclick=()=>showTab('free');
