@@ -31,11 +31,13 @@ export const billingAvailable = () => !!(GROW.userId && GROW.pageCode);
 // Prices (ILS) + human descriptions per product. Defaults reflect the published price list;
 // each is still overridable via env so they can be tuned without a code change.
 const QUESTIONS_PER_PACK = Number(process.env.GROW_QUESTIONS_PER_PACK || 1); // billed per single question
+// VAT-INCLUSIVE prices the customer actually pays (clean whole shekels). The "before VAT"
+// figure shown alongside is derived from these (price ÷ 1.18), so the math is exact top-down.
 const PRICE = {
-  review: Number(process.env.GROW_PRICE_REVIEW || 87),       // one-time full EOC review (no membership)
-  consult: Number(process.env.GROW_PRICE_CONSULT || 570),    // 30-minute expert meeting
-  subscription: Number(process.env.GROW_PRICE_SUB || 97),    // monthly membership
-  questions: Number(process.env.GROW_PRICE_QUESTIONS || 5),  // per single question
+  review: Number(process.env.GROW_PRICE_REVIEW || 103),       // one-time full EOC review (no membership)
+  consult: Number(process.env.GROW_PRICE_CONSULT || 673),     // 30-minute expert meeting
+  subscription: Number(process.env.GROW_PRICE_SUB || 115),    // monthly membership
+  questions: Number(process.env.GROW_PRICE_QUESTIONS || 6),   // per single question
 };
 const DESC = {
   review: 'EOC full review (one EOC)',
@@ -43,12 +45,13 @@ const DESC = {
   subscription: 'EOC Assistant — monthly membership: unlimited questions + full EOC review',
   questions: QUESTIONS_PER_PACK === 1 ? 'EOC Assistant — 1 more question' : `EOC Assistant — ${QUESTIONS_PER_PACK} more questions`,
 };
-// VAT (Israel, 18% as of 2025). Prices above are ex-VAT; the customer is charged inclusive of VAT.
+// VAT (Israel, 18% as of 2025). PRICE values above ARE VAT-inclusive; ex-VAT is derived for display.
 const VAT_RATE = Number(process.env.VAT_RATE || 0.18);
-export const withVat = (n) => Math.ceil((Number(n) || 0) * (1 + VAT_RATE)); // round UP to whole shekels
+const exVat = (n) => Math.round((Number(n) || 0) / (1 + VAT_RATE) * 100) / 100; // back out VAT (2 decimals)
 export const pricing = () => ({
-  ...PRICE,
-  incl: Object.fromEntries(Object.entries(PRICE).map(([k, v]) => [k, withVat(v)])), // VAT-inclusive prices to display
+  ...PRICE,                                  // VAT-inclusive (what the customer pays)
+  incl: { ...PRICE },                        // explicit alias for the display
+  ex: Object.fromEntries(Object.entries(PRICE).map(([k, v]) => [k, exVat(v)])), // ex-VAT, shown as the secondary line
   vatRate: VAT_RATE,
   questionsPack: QUESTIONS_PER_PACK, currency: 'ILS', enabled: billingAvailable(),
 });
@@ -101,9 +104,8 @@ export function grant(email, kind) {
 // codes / recurring params MUST be confirmed against your Grow developer docs + sandbox once
 // the account is approved (search "VERIFY" here and in GROW_SETUP.md).
 async function growCreatePayment({ kind, email, origin, customer }) {
-  const base = PRICE[kind];
-  if (!DESC[kind] || !base) { const e = new Error('Product not configured (price/kind).'); e.code = 'BAD_KIND'; throw e; }
-  const sum = withVat(base); // charge the customer VAT-inclusive
+  const sum = PRICE[kind]; // already VAT-inclusive (what the customer pays)
+  if (!DESC[kind] || !sum) { const e = new Error('Product not configured (price/kind).'); e.code = 'BAD_KIND'; throw e; }
   const c = customer || {};
   const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ').slice(0, 80);
   const callbackBase = process.env.BASE_URL || origin;

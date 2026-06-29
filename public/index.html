@@ -874,7 +874,7 @@ function renderPricing(){
   $('#pricingLangToggle').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.pl===pricingLang));
   $('#pricingIntro').innerHTML = t.intro;
   const order=['subscription','questions','review','consult'];
-  $('#pricingGrid').innerHTML = order.map(kind=>{ const c=t.cards[kind]; const ex=p[kind]; const incl=(p.incl&&p.incl[kind])||ex; const best=kind==='subscription';
+  $('#pricingGrid').innerHTML = order.map(kind=>{ const c=t.cards[kind]; const incl=(p.incl&&p.incl[kind])||p[kind]; const ex=(p.ex&&p.ex[kind]); const best=kind==='subscription';
     return `<div class="price-card${best?' best':''}">
     ${best?`<div class="pc-badge">${esc(t.best)}</div>`:''}
     <div class="pc-name">${esc(c.name)}</div>
@@ -952,8 +952,8 @@ const CO_NAMES={subscription:'Monthly membership',questions:'Per question',revie
 let coKind=null;
 function goCheckout(kind){
   coKind=kind;
-  const p=(ME&&ME.pricing)||{}; const incl=(p.incl&&p.incl[kind]); const ex=p[kind];
-  $('#coSummary').innerHTML = `<b>${esc(CO_NAMES[kind]||kind)}</b> — ₪${incl||ex} incl. VAT${ex?` <span class="muted">(₪${ex} + VAT)</span>`:''}`;
+  const p=(ME&&ME.pricing)||{}; const incl=(p.incl&&p.incl[kind])||p[kind]; const ex=(p.ex&&p.ex[kind]);
+  $('#coSummary').innerHTML = `<b>${esc(CO_NAMES[kind]||kind)}</b> — ₪${incl} incl. VAT${ex?` <span class="muted">(₪${ex} before VAT)</span>`:''}`;
   ['coFirst','coLast','coPhone','coCountry'].forEach(id=>{ const el=$('#'+id); if(el) el.value=''; });
   $('#coEmail').value=(ME&&ME.email)||'';
   $('#coTerms').checked=false; $('#coNote').textContent=''; $('#coNote').className='expert-note';
