@@ -21,6 +21,7 @@ import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail } from '.
 import * as qalog from './qalog.mjs';
 import * as leads from './leads.mjs';
 import * as billing from './billing.mjs';
+import * as morning from './morning.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.resolve(__dirname, '..', 'public');
@@ -195,7 +196,16 @@ app.post('/bug', rateLimit, uploadMedia.single('file'), (req, res) => {
   res.json({ ok: true });
 });
 
-// Start a payment: returns a hosted-checkout URL the browser redirects to.
+const PRODUCT_DESC = {
+  subscription: 'EOC Assistant — monthly membership (unlimited questions + full EOC review)',
+  questions: 'EOC Assistant — one question',
+  review: 'EOC Assistant — full EOC review',
+  consult: 'EOC Assistant — 30-minute expert consultation',
+};
+
+// Start a payment via Morning: collect + validate customer details + terms, capture the lead,
+// create the hosted payment page (VAT-inclusive), and remember the pending payment so the webhook
+// can grant the right entitlement. Returns the payment URL for the browser to redirect to.
 app.post('/checkout', rateLimit, requireGate, async (req, res) => {
   const kind = String(req.body?.kind || '').trim();
   if (!['review', 'consult', 'subscription', 'questions'].includes(kind)) return res.status(400).json({ error: 'Unknown product.' });
@@ -207,33 +217,60 @@ app.post('/checkout', rateLimit, requireGate, async (req, res) => {
     lastName: String(cu.lastName || '').slice(0, 40).trim(),
     phone: String(cu.phone || '').replace(/[^\d]/g, '').slice(0, 15),
     country: String(cu.country || '').slice(0, 40).trim(),
+    company: String(cu.company || '').slice(0, 80).trim(),
     email: String(cu.email || '').slice(0, 160).trim() || leads.emailForToken(req.sessionToken),
   };
   if (!customer.firstName || !customer.lastName) return res.status(400).json({ error: 'Please enter your first and last name.' });
   if (customer.phone.length < 7) return res.status(400).json({ error: 'Please enter a valid phone number.' });
   if (!customer.country) return res.status(400).json({ error: 'Please select your country.' });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(customer.email)) return res.status(400).json({ error: 'Please enter a valid email.' });
-  // Audit the policy acceptance + details, linked to the client's email, to leads.jsonl + the Sheet.
-  leads.recordConsent(req.sessionToken, `checkout: ${kind} · ${customer.firstName} ${customer.lastName} · ${customer.phone} · ${customer.country}`);
-  const email = customer.email;
+  if (!morning.paymentsConfigured()) return res.status(503).json({ error: 'Payments are not connected yet — please check back soon.' });
+  // Capture the lead (email + phone + company) and audit the policy acceptance + buyer details
+  // → leads.jsonl + Google Sheet. (The gate already stored the lead; this records the buyer too.)
+  leads.addLead({ email: customer.email, phone: customer.phone || '0000000', company: customer.company || `${customer.firstName} ${customer.lastName}` });
+  leads.recordConsent(req.sessionToken, `checkout: ${kind} · ${customer.firstName} ${customer.lastName} · ${customer.company || '-'} · ${customer.phone} · ${customer.country} · ${customer.email}`);
+
+  const pricing = billing.pricing();
+  const amountIncl = pricing.incl[kind];
   const origin = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   try {
-    const { url } = await billing.createCheckout({ kind, email, origin, customer });
+    const { url, id } = await morning.createPaymentForm({
+      kind, description: PRODUCT_DESC[kind] || kind, amountIncl, client: customer,
+      recurring: kind === 'subscription', origin,
+    });
+    if (!url) return res.status(502).json({ error: 'Could not start payment. Please try again.' });
+    // Remember what was bought so the webhook grants the right entitlement (keyed by Morning id + email).
+    billing.addPending(id || customer.email, { email: customer.email, kind });
     res.json({ url });
   } catch (e) {
-    if (e.code === 'NO_BILLING') return res.status(503).json({ error: 'Payments are not connected yet — please check back soon.' });
-    console.error('[checkout] failed:', e?.message || e);
-    res.status(502).json({ error: 'Could not start payment. Please try again.' });
+    console.error('[checkout] morning failed:', e?.message || e);
+    res.status(502).json({ error: 'Could not start payment right now. Please try again.' });
   }
 });
 
-// Grow server-to-server callback: confirm payment → grant the entitlement.
-app.post('/pay/callback', async (req, res) => {
+// Morning webhook (server-to-server). Entitlement is granted ONLY here, after the payment is
+// confirmed — never on the client-side success redirect. Authenticity is verified via the shared
+// secret (Morning Webhooks tab) and, when possible, by re-fetching the document from Morning.
+app.post('/pay/callback', rateLimit, async (req, res) => {
+  res.json({ received: true }); // ack immediately so Morning doesn't retry-storm
   try {
-    const r = await billing.handleCallback(req.body);
-    console.log(`[pay] callback ok=${r.ok} kind=${r.kind || '?'}`);
-  } catch (e) { console.error('[pay] callback error:', e?.message || e); }
-  res.json({ received: true }); // always 200 so the gateway doesn't retry-storm
+    const b = req.body || {};
+    const ok = morning.verifyWebhookSecret({ headerSecret: req.get('x-morning-secret') || req.get('x-webhook-secret'), bodySecret: b.secret });
+    if (!ok) { console.warn('[pay] webhook rejected: bad/no secret'); return; }
+    // Confirm the payment actually succeeded.
+    const status = String(b.status ?? b.paymentStatus ?? '').toLowerCase();
+    const paid = b.success === true || status === 'success' || status === 'paid' || status === '1' || Number(b.errorCode) === 0;
+    if (!paid) { console.log('[pay] webhook: not a success event, ignoring'); return; }
+    // Map back to what was bought: by Morning id, else by client email. Always CLAIM (mark done)
+    // before granting, so a duplicate webhook can't double-grant (takePending returns null if done).
+    const id = b.id || b.formId || b.paymentId || b.documentId;
+    const email = (b.client?.emails?.[0] || b.email || '').toLowerCase();
+    let rec = id ? billing.takePending(id) : null;
+    if (!rec) { const f = billing.findPending({ email }); if (f) rec = billing.takePending(f.id); }
+    if (!rec) { console.warn('[pay] webhook: no unclaimed pending payment matched (already granted or unknown)'); return; }
+    billing.grant(rec.email, rec.kind);
+    console.log(`[pay] ✓ payment confirmed → granted ${rec.kind} to ${rec.email}`);
+  } catch (e) { console.error('[pay] webhook error:', e?.message || e); }
 });
 
 // Book a 30-minute online consultation with a real ITL expert: topic + short description +

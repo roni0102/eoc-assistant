@@ -19,14 +19,13 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '..', 'data');
 const ENT_PATH = path.join(DATA_DIR, 'entitlements.json');
+const PENDING_PATH = path.join(DATA_DIR, 'pending_payments.json');
 
-// ---- Grow config (filled in when the account is approved) -------------------------------
-const GROW = {
-  base: process.env.GROW_API_BASE || 'https://sandbox.meshulam.co.il/api/light/server/1.0', // → secure.meshulam.co.il for production
-  userId: process.env.GROW_USER_ID || '',
-  pageCode: process.env.GROW_PAGE_CODE || '',
-};
-export const billingAvailable = () => !!(GROW.userId && GROW.pageCode);
+// Payments run through Morning (Greeninvoice). Billing is "available" when the Morning API
+// credentials are configured. (The legacy Grow adapter below is unused — kept dormant.)
+export const billingAvailable = () => !!(process.env.GREENINVOICE_API_KEY_ID && process.env.GREENINVOICE_API_SECRET);
+
+const GROW = { base: '', userId: '', pageCode: '' }; // legacy, unused
 
 // Prices (ILS) + human descriptions per product. Defaults reflect the published price list;
 // each is still overridable via env so they can be tuned without a code change.
@@ -62,6 +61,34 @@ const ent = (() => {
   try { return new Map(Object.entries(JSON.parse(fs.readFileSync(ENT_PATH, 'utf8')))); }
   catch { return new Map(); }
 })();
+// ---- Pending payments (id → {email, kind}) so a confirmed webhook grants the right thing,
+//      idempotently (a duplicate webhook won't double-grant). Persisted to disk. ------------
+const pending = (() => {
+  try { return new Map(Object.entries(JSON.parse(fs.readFileSync(PENDING_PATH, 'utf8')))); } catch { return new Map(); }
+})();
+function persistPending() { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(PENDING_PATH, JSON.stringify(Object.fromEntries(pending))); } catch {} }
+export function addPending(id, { email, kind }) {
+  pending.set(String(id), { email: String(email || '').toLowerCase().trim(), kind, ts: Date.now(), done: false });
+  persistPending();
+}
+/** Claim a pending payment by id (idempotent — returns null if unknown or already granted). */
+export function takePending(id) {
+  const r = pending.get(String(id));
+  if (!r || r.done) return null;
+  r.done = true; persistPending();
+  return r;
+}
+/** Fallback lookup when the webhook id differs from the form id. */
+export function findPending({ email, kind } = {}) {
+  for (const [id, r] of pending) {
+    if (r.done) continue;
+    if (email && r.email !== String(email).toLowerCase().trim()) continue;
+    if (kind && r.kind !== kind) continue;
+    return { id, ...r };
+  }
+  return null;
+}
+
 function persist() {
   try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(ENT_PATH, JSON.stringify(Object.fromEntries(ent))); } catch {}
 }

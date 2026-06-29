@@ -533,6 +533,7 @@
         <option value="Other">Other</option>
       </select>
     </div>
+    <input id="coCompany" type="text" placeholder="Company (for the invoice)" autocomplete="organization" style="width:100%;margin-bottom:10px" />
     <input id="coEmail" type="email" placeholder="Email" autocomplete="email" style="width:100%;margin-bottom:10px" />
     <label class="policy-chk"><input type="checkbox" id="coTerms" />
       <span>I have read and accept the <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</span></label>
@@ -954,7 +955,7 @@ function goCheckout(kind){
   coKind=kind;
   const p=(ME&&ME.pricing)||{}; const incl=(p.incl&&p.incl[kind])||p[kind]; const ex=(p.ex&&p.ex[kind]);
   $('#coSummary').innerHTML = `<b>${esc(CO_NAMES[kind]||kind)}</b> — ₪${incl} incl. VAT${ex?` <span class="muted">(₪${ex} before VAT)</span>`:''}`;
-  ['coFirst','coLast','coPhone','coCountry'].forEach(id=>{ const el=$('#'+id); if(el) el.value=''; });
+  ['coFirst','coLast','coPhone','coCountry','coCompany'].forEach(id=>{ const el=$('#'+id); if(el) el.value=''; });
   $('#coEmail').value=(ME&&ME.email)||'';
   $('#coTerms').checked=false; $('#coNote').textContent=''; $('#coNote').className='expert-note';
   $('#checkoutModal').hidden=false; $('#coFirst').focus();
@@ -966,7 +967,8 @@ $('#coContinue').onclick=async ()=>{
   if(!coKind) return;
   const note=$('#coNote'); const fail=(m)=>{ note.className='expert-note err'; note.textContent=m; };
   const customer={ firstName:$('#coFirst').value.trim(), lastName:$('#coLast').value.trim(),
-    phone:$('#coPhone').value.replace(/[^\d]/g,''), country:$('#coCountry').value, email:$('#coEmail').value.trim() };
+    phone:$('#coPhone').value.replace(/[^\d]/g,''), country:$('#coCountry').value,
+    company:$('#coCompany').value.trim(), email:$('#coEmail').value.trim() };
   if(!customer.firstName||!customer.lastName) return fail('Please enter your first and last name.');
   if(customer.phone.length<7) return fail('Please enter a valid phone number (digits only).');
   if(!customer.country) return fail('Please select your country.');
