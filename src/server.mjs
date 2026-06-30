@@ -105,7 +105,9 @@ function logQuery(meta) {
   console.log(`[ask] qlen=${meta.qlen} mode=${meta.mode} covered=${meta.covered} llm=${meta.llm} ms=${meta.ms}`);
 }
 
-app.get('/healthz', (_req, res) => res.json({ ok: true, lines: loadKB().items.length }));
+// Liveness probe — must respond instantly (no KB load) so the platform health check passes
+// even during a cold start, otherwise the deploy times out waiting on it.
+app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 // Legal / contact pages (clean URLs) + the Purchasing Policy served explicitly as a real file,
 // so the links work even behind a custom domain / proxy (never caught by any SPA fallback).
@@ -266,12 +268,6 @@ app.post('/checkout', rateLimit, requireGate, async (req, res) => {
   }
 });
 
-// TEMP capture of the last webhook (headers + body, secret-ish values masked) for diagnosis.
-let _lastHook = null;
-const _mask = (o) => { try { return JSON.parse(JSON.stringify(o, (k, v) => /secret|token|key|sign|hash|pass/i.test(k) && typeof v === 'string' ? `‹masked:${v.length}›` : v)); } catch { return null; } };
-// TEMP: returns the last webhook snapshot — gated by the webhook secret as ?k=
-app.get('/paydiag', (req, res) => { if (req.query.k !== process.env.GREENINVOICE_WEBHOOK_SECRET) return res.status(403).json({ error: 'forbidden' }); res.json(_lastHook || { none: true }); });
-
 // Morning webhook (server-to-server). Entitlement is granted ONLY here, after the payment is
 // confirmed — never on the client-side success redirect. Authenticity is verified via the shared
 // secret (Morning Webhooks tab) and, when possible, by re-fetching the document from Morning.
@@ -279,7 +275,6 @@ app.post('/pay/callback', rateLimit, async (req, res) => {
   res.json({ received: true }); // ack immediately so Morning doesn't retry-storm
   try {
     const b = req.body || {};
-    _lastHook = { headerNames: Object.keys(req.headers), headers: _mask(req.headers), bodyKeys: Object.keys(b), body: _mask(b), query: req.query };
     // Morning (GreenInvoice/2.1) does NOT send a shared secret or signature on the webhook — the
     // body only carries the document id. So authenticity is established by RE-FETCHING the document
     // from Morning's authenticated API: only our own API key can read our documents, and the grant

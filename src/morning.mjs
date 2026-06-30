@@ -8,14 +8,17 @@
 // connection test (scripts/morning-test.mjs) before any payment flow is built on top.
 
 // ============================================================================================
-// STATUS: payment-form creation WORKS in sandbox — createPaymentForm returns a real Meshulam
-// hosted-checkout URL (errorCode 2600 was fixed by passing GREENINVOICE_PLUGIN_ID). Still TODO:
-//   (1) complete a demo-card payment on the returned URL and confirm the webhook (/pay/callback)
-//       fires → entitlement granted → tax invoice (doc 320) auto-issued in RK Bold Finance Ltd's
-//       name with 18% VAT (needs the keys + webhook secret set on the public host so Morning can
-//       reach notifyUrl);
-//   (2) confirm/implement recurring (הוראת קבע) for the ₪115/mo subscription tier + cancel;
-//   (3) repeat on PRODUCTION (GREENINVOICE_ENV=production, production plugin id) before launch.
+// STATUS: full sandbox payment chain VERIFIED end-to-end (2026-06-30) — checkout → Morning
+// payment form → demo-card payment → payment/received webhook → /pay/callback → entitlement
+// granted → tax invoice (doc 320) auto-issued. Notes that made it work:
+//   - GREENINVOICE_PLUGIN_ID selects the clearing terminal (fixes errorCode 2600);
+//   - income line @ the VAT-inclusive amount with vatType:1 (fixes errorCode 2422 on all tiers);
+//   - Morning's webhook sends NO secret/signature — only the document id — so /pay/callback
+//     verifies authenticity by RE-FETCHING the document via getDocument() (see server.mjs).
+// Still TODO: (1) enable the Render PERSISTENT DISK — pending_payments.json + entitlements.json
+//   live on disk, and the free tier wipes them on every redeploy/spin-down, so a pending created
+//   at checkout can vanish before the webhook arrives; (2) recurring (הוראת קבע) for the ₪115/mo
+//   tier + cancel; (3) repeat on PRODUCTION (GREENINVOICE_ENV=production, production plugin id).
 // ============================================================================================
 const ENV = (process.env.GREENINVOICE_ENV || 'sandbox').toLowerCase();
 const BASE = ENV === 'production'
