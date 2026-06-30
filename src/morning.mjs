@@ -92,9 +92,12 @@ const toCountryCode = (c) => COUNTRY_CODE[c] || (/^[A-Za-z]{2}$/.test(String(c |
  * invoice/receipt (doc 320) in RK Bold Finance Ltd's name. Verified working against the sandbox:
  *   - pluginId (GREENINVOICE_PLUGIN_ID) selects the clearing terminal (without it → errorCode 2600);
  *   - a top-level `description` is required (without it → bare HTTP 400, errorCode 0);
- *   - `amount` is the VAT-INCLUSIVE charge; the income LINE is priced EX-VAT (amountEx) with a
- *     taxable vatType so the invoice = ex + 18% VAT = amount (the receipt side then balances —
- *     otherwise errorCode 2422 "receipts vs payments mismatch").
+ *   - client.country must be an ISO code, not a name (without it → errorCode 1104);
+ *   - `amount` is the VAT-INCLUSIVE charge AND the income line is priced at the same inclusive
+ *     amount with vatType:1 (= price INCLUDES VAT), so Greeninvoice extracts the 18% VAT and the
+ *     receipt balances exactly. (Pricing the line EX-VAT caused errorCode 2422 "receipts vs
+ *     payments mismatch" on tiers where ex×1.18 didn't round back to the whole-shekel price.)
+ * `amountEx` is accepted for backward-compat but no longer used.
  */
 export async function createPaymentForm({ kind, description, amountIncl, amountEx, client = {}, recurring = false, origin }) {
   const base = process.env.BASE_URL || origin;

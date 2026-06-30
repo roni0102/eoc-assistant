@@ -107,16 +107,6 @@ function logQuery(meta) {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, lines: loadKB().items.length }));
 
-// TEMP: confirm the real createPaymentForm returns a URL on the live host (no secret echoed).
-app.get('/paydiag', rateLimit, async (_req, res) => {
-  try {
-    const p = billing.pricing();
-    const r = await morning.createPaymentForm({ kind: 'questions', description: 'EOC Assistant — diag', amountIncl: p.incl.questions,
-      client: { firstName: 'Diag', lastName: 'Test', email: 'diag@test.co', phone: '0500000000', country: 'Israel' }, origin: 'https://eoc-assistant.onrender.com' });
-    res.json({ ok: !!r.url, url: (r.url || '').slice(0, 50) });
-  } catch (e) { res.json({ ok: false, error: String(e?.message || e).slice(0, 300) }); }
-});
-
 // Legal / contact pages (clean URLs) + the Purchasing Policy served explicitly as a real file,
 // so the links work even behind a custom domain / proxy (never caught by any SPA fallback).
 app.get('/accessibility', (_req, res) => res.sendFile(path.join(PUBLIC, 'accessibility.html')));
