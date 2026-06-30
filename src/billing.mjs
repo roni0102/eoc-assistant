@@ -107,6 +107,23 @@ export function entitlements(email) {
 export const extraQuestions = (email) => rec(email).questionCredits || 0; // purchased question packs raise the cap
 export const hasSub = (email) => (rec(email).subUntil || 0) > Date.now();
 
+// ---- Renewal reminders: the monthly pass grants 31 days (no auto-charge); we email members a
+//      few days before expiry with a renew link. `renewNotifiedFor` stores the subUntil we last
+//      reminded about, so each renewal cycle is reminded exactly once. -----------------------
+export function subsNeedingRenewalReminder(withinMs) {
+  const now = Date.now();
+  const out = [];
+  for (const [email, r] of ent) {
+    const until = r.subUntil || 0;
+    if (until <= now) continue;                 // expired or never subscribed
+    if (until - now > withinMs) continue;       // not within the reminder window yet
+    if (r.renewNotifiedFor === until) continue; // already reminded for this exact period
+    out.push({ email, subUntil: until, daysLeft: Math.max(1, Math.ceil((until - now) / (24 * 3600 * 1000))) });
+  }
+  return out;
+}
+export function markRenewalReminded(email, subUntil) { const r = rec(email); r.renewNotifiedFor = subUntil; persist(); }
+
 // ---- Admin / owner bypass — the key lives ONLY in the ADMIN_KEY env var (never in code/repo).
 // A correct key unlocks unlimited questions + free EOC reviews for that session's email.
 export const adminConfigured = () => !!process.env.ADMIN_KEY;

@@ -131,3 +131,25 @@ export async function sendBugEmail({ bug, file }) {
     return true;
   } catch (e) { try { console.error('[mail] bug notify failed:', e?.message || e); } catch {} return false; }
 }
+
+/**
+ * sendRenewalReminder({ to, daysLeft, renewUrl }) -> boolean. Reminds a member their monthly
+ * pass is about to expire, with a one-click renew link. Bilingual (HE primary). Never throws.
+ */
+export async function sendRenewalReminder({ to, daysLeft, renewUrl }) {
+  if (!mailAvailable() || !to) return false;
+  const heWhen = daysLeft <= 1 ? 'מחר' : `בעוד ${daysLeft} ימים`;
+  const enWhen = daysLeft <= 1 ? 'tomorrow' : `in ${daysLeft} days`;
+  const text =
+    `המנוי החודשי שלך ל-EOC Assistant יפוג ${heWhen}.\n` +
+    `כדי להמשיך עם שאלות ללא הגבלה + בדיקת EOC מלאה, אפשר לחדש כאן:\n${renewUrl}\n\n` +
+    `אם אינך מעוניין/ת לחדש — אין צורך לעשות דבר; הגישה פשוט תסתיים בתום התקופה.\n\n` +
+    `— — —\n\n` +
+    `Your EOC Assistant monthly membership expires ${enWhen}.\n` +
+    `To keep unlimited questions + your full EOC review, renew here:\n${renewUrl}\n\n` +
+    `If you'd rather not renew, no action is needed — access simply ends at the end of the period.\n\n— EOC Assistant`;
+  try {
+    await deliver({ to, subject: `EOC Assistant — המנוי שלך יפוג ${heWhen} · membership expires ${enWhen}`, text });
+    return true;
+  } catch (e) { try { console.error('[mail] renewal reminder failed:', e?.message || e); } catch {} return false; }
+}

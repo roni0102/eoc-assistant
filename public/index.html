@@ -1028,6 +1028,14 @@ function toast(msg, kind){
   if(paid==='review') showTab('premium'); else if(paid==='consult') showTab('expert');
 })();
 
+// open the relevant checkout when arriving from a renewal-reminder link (?renew=subscription)
+(function renewReturn(){
+  const kind=new URLSearchParams(location.search).get('renew');
+  if(!kind || !['subscription','review','consult','questions'].includes(kind)) return;
+  history.replaceState({}, '', location.pathname);
+  setTimeout(()=>{ try{ goCheckout(kind); }catch(e){} }, 600);
+})();
+
 // ---- talk to an expert: book a 30-min online meeting ----
 $('#expertBtn').onclick=async ()=>{
   const note=$('#expertNote'); const fail=(m)=>{ note.textContent=m; note.className='expert-note err'; };

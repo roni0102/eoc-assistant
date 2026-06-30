@@ -17,7 +17,7 @@ import { composeAnswer } from './answer.mjs';
 import { answerWithLLM, translate, LANG_NAMES, llmAvailable, MODEL } from './llm.mjs';
 import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
-import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail } from './mailer.mjs';
+import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail, sendRenewalReminder } from './mailer.mjs';
 import * as qalog from './qalog.mjs';
 import * as leads from './leads.mjs';
 import * as billing from './billing.mjs';
@@ -513,6 +513,25 @@ app.get('/review/download/:token', (req, res) => {
   res.send(d.buffer);
   downloads.delete(req.params.token); // one-time
 });
+
+// Subscription renewal reminders — the ₪115 monthly pass grants 31 days (no auto-charge), so a
+// few days before expiry we email the member a one-click renew link. Render Starter is always-on,
+// so an in-process daily timer is reliable; the per-cycle flag (renewNotifiedFor) prevents dupes,
+// and it re-checks shortly after each boot/deploy.
+const RENEW_REMIND_WITHIN_MS = 3 * 24 * 3600 * 1000; // 3 days before expiry
+async function runRenewalReminders() {
+  try {
+    if (!billing.billingAvailable() || !mailAvailable()) return;
+    const due = billing.subsNeedingRenewalReminder(RENEW_REMIND_WITHIN_MS);
+    for (const s of due) {
+      const renewUrl = `${process.env.BASE_URL || ''}/?renew=subscription`;
+      const ok = await sendRenewalReminder({ to: s.email, daysLeft: s.daysLeft, renewUrl });
+      if (ok) { billing.markRenewalReminded(s.email, s.subUntil); console.log(`[renew] reminder → ${s.email} (${s.daysLeft}d left)`); }
+    }
+  } catch (e) { console.error('[renew] reminder run failed:', e?.message || e); }
+}
+setInterval(runRenewalReminders, 12 * 3600 * 1000).unref?.(); // twice daily
+setTimeout(runRenewalReminders, 30_000).unref?.();            // once shortly after boot
 
 app.listen(PORT, () => {
   loadKB();
