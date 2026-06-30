@@ -266,6 +266,12 @@ app.post('/checkout', rateLimit, requireGate, async (req, res) => {
   }
 });
 
+// TEMP capture of the last webhook (headers + body, secret-ish values masked) for diagnosis.
+let _lastHook = null;
+const _mask = (o) => { try { return JSON.parse(JSON.stringify(o, (k, v) => /secret|token|key|sign|hash|pass/i.test(k) && typeof v === 'string' ? `‹masked:${v.length}›` : v)); } catch { return null; } };
+// TEMP: returns the last webhook snapshot — gated by the webhook secret as ?k=
+app.get('/paydiag', (req, res) => { if (req.query.k !== process.env.GREENINVOICE_WEBHOOK_SECRET) return res.status(403).json({ error: 'forbidden' }); res.json(_lastHook || { none: true }); });
+
 // Morning webhook (server-to-server). Entitlement is granted ONLY here, after the payment is
 // confirmed — never on the client-side success redirect. Authenticity is verified via the shared
 // secret (Morning Webhooks tab) and, when possible, by re-fetching the document from Morning.
@@ -273,6 +279,7 @@ app.post('/pay/callback', rateLimit, async (req, res) => {
   res.json({ received: true }); // ack immediately so Morning doesn't retry-storm
   try {
     const b = req.body || {};
+    _lastHook = { headerNames: Object.keys(req.headers), headers: _mask(req.headers), bodyKeys: Object.keys(b), body: _mask(b), query: req.query };
     // First-run diagnostics — reveals Morning's actual webhook shape so we can finalize the
     // secret check + id/email mapping (no secret value is logged).
     console.log(`[pay] webhook received · keys=[${Object.keys(b).join(',')}] · status=${b.status ?? b.paymentStatus ?? '?'} · hasHeaderSecret=${!!(req.get('x-morning-secret') || req.get('x-webhook-secret'))}`);
