@@ -249,10 +249,11 @@ app.post('/checkout', rateLimit, requireGate, async (req, res) => {
 
   const pricing = billing.pricing();
   const amountIncl = pricing.incl[kind];
+  const amountEx = pricing.ex[kind];
   const origin = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   try {
     const { url, id } = await morning.createPaymentForm({
-      kind, description: PRODUCT_DESC[kind] || kind, amountIncl, client: customer,
+      kind, description: PRODUCT_DESC[kind] || kind, amountIncl, amountEx, client: customer,
       recurring: kind === 'subscription', origin,
     });
     if (!url) return res.status(502).json({ error: 'Could not start payment. Please try again.' });

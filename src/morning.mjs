@@ -8,15 +8,14 @@
 // connection test (scripts/morning-test.mjs) before any payment flow is built on top.
 
 // ============================================================================================
-// TODO — RE-TEST LIVE PAYMENT URL: the payment flow is built + unit-tested with a mocked
-// success, but the live hosted-payment URL was NOT exercised because the sandbox account had no
-// active clearing terminal (errorCode 2600). Once a terminal is active:
-//   (1) re-run `node scripts/morning-pay-test.mjs` → confirm a real payment URL opens, shows the
-//       ₪ amount incl. 18% VAT, with card + Bit;
-//   (2) confirm webhook → entitlement → tax invoice auto-issued in RK Bold Finance Ltd's name;
-//   (3) confirm recurring (הוראת קבע) for the ₪115/mo subscription tier + cancel;
-//   (4) verify the invoice VAT breakdown equals the displayed VAT-inclusive total (income.vatType).
-// Then repeat ALL of the above on PRODUCTION (GREENINVOICE_ENV=production) before launch.
+// STATUS: payment-form creation WORKS in sandbox — createPaymentForm returns a real Meshulam
+// hosted-checkout URL (errorCode 2600 was fixed by passing GREENINVOICE_PLUGIN_ID). Still TODO:
+//   (1) complete a demo-card payment on the returned URL and confirm the webhook (/pay/callback)
+//       fires → entitlement granted → tax invoice (doc 320) auto-issued in RK Bold Finance Ltd's
+//       name with 18% VAT (needs the keys + webhook secret set on the public host so Morning can
+//       reach notifyUrl);
+//   (2) confirm/implement recurring (הוראת קבע) for the ₪115/mo subscription tier + cancel;
+//   (3) repeat on PRODUCTION (GREENINVOICE_ENV=production, production plugin id) before launch.
 // ============================================================================================
 const ENV = (process.env.GREENINVOICE_ENV || 'sandbox').toLowerCase();
 const BASE = ENV === 'production'
@@ -81,40 +80,49 @@ export async function apiFetch(path, { method = 'GET', body, headers = {} } = {}
 // ACCOUNT's name (RK Bold Finance Ltd) and emailed to the client on successful payment.
 const DOC_TAX_INVOICE_RECEIPT = 320;
 
+// VAT rate used to split the inclusive price into the ex-VAT invoice line (Israel, 18%).
+const VAT_RATE = Number(process.env.VAT_RATE || 0.18);
+// Morning expects an ISO-3166 country CODE, not a name (errorCode 1104 otherwise).
+const COUNTRY_CODE = { Israel: 'IL', 'United States': 'US', 'United Kingdom': 'GB' };
+const toCountryCode = (c) => COUNTRY_CODE[c] || (/^[A-Za-z]{2}$/.test(String(c || '')) ? String(c).toUpperCase() : '');
+
 /**
- * createPaymentForm({ kind, description, amountIncl, client, recurring, origin }) → { url, id }
- * Creates a Morning hosted payment page (card + Bit). On success Morning auto-issues the tax
- * invoice/receipt to the client. Charge is VAT-INCLUSIVE (amountIncl).
- *
- * NOTE (confirm-on-live, see scripts TODO): the exact field for VAT-inclusive pricing and the
- * recurring / standing-order (הוראת קבע) flag for the subscription tier must be verified against
- * a live sandbox invoice once an active clearing terminal exists. The request shape below is the
- * one Morning already accepted up to the clearing step.
+ * createPaymentForm({ kind, description, amountIncl, amountEx, client, recurring, origin }) → { url, id }
+ * Creates a Morning hosted payment page (card + Bit) and, on success, auto-issues the tax
+ * invoice/receipt (doc 320) in RK Bold Finance Ltd's name. Verified working against the sandbox:
+ *   - pluginId (GREENINVOICE_PLUGIN_ID) selects the clearing terminal (without it → errorCode 2600);
+ *   - a top-level `description` is required (without it → bare HTTP 400, errorCode 0);
+ *   - `amount` is the VAT-INCLUSIVE charge; the income LINE is priced EX-VAT (amountEx) with a
+ *     taxable vatType so the invoice = ex + 18% VAT = amount (the receipt side then balances —
+ *     otherwise errorCode 2422 "receipts vs payments mismatch").
  */
-export async function createPaymentForm({ kind, description, amountIncl, client = {}, recurring = false, origin }) {
+export async function createPaymentForm({ kind, description, amountIncl, amountEx, client = {}, recurring = false, origin }) {
   const base = process.env.BASE_URL || origin;
+  const linePrice = (amountEx != null) ? amountEx : Math.round((amountIncl / (1 + VAT_RATE)) * 100) / 100; // ex-VAT line
   const body = {
-    description,
+    description,                                  // REQUIRED top-level
     type: DOC_TAX_INVOICE_RECEIPT,
     lang: 'he',
     currency: 'ILS',
+    vatType: 0,
+    amount: amountIncl,                           // VAT-inclusive charge
     maxPayments: 1,
+    ...(process.env.GREENINVOICE_PLUGIN_ID ? { pluginId: process.env.GREENINVOICE_PLUGIN_ID } : {}),
     client: {
       name: [client.firstName, client.lastName].filter(Boolean).join(' ') || client.name || client.email || 'Customer',
       emails: client.email ? [client.email] : [],
       ...(client.phone ? { phone: String(client.phone) } : {}),
-      ...(client.country ? { country: client.country } : {}),
-      ...(client.company ? { taxId: '' , businessName: client.company } : {}),
+      ...(toCountryCode(client.country) ? { country: toCountryCode(client.country) } : {}),
+      ...(client.company ? { businessName: client.company } : {}),
       add: true,
     },
-    // Price is VAT-inclusive; vatType=1 marks the line taxable so the 18% VAT is broken out on the
-    // invoice. TODO(confirm-live): verify the invoice total equals amountIncl and VAT shows 18%.
-    income: [{ description, quantity: 1, price: amountIncl, currency: 'ILS', vatType: 1 }],
+    // Line priced EX-VAT so the 320 invoice = line + 18% VAT = amount (balances the receipt).
+    income: [{ description, quantity: 1, price: linePrice, currency: 'ILS', vatType: 0 }],
     remarks: `EOC Assistant · ${kind}`,
     successUrl: `${origin}/?paid=${kind}`,
     failureUrl: `${origin}/?canceled=1`,
     notifyUrl: `${base}/pay/callback`,
-    // TODO(confirm-live): recurring/standing-order field for the monthly subscription tier.
+    // TODO(confirm-live): recurring/standing-order (הוראת קבע) field for the monthly subscription tier.
     ...(recurring ? { /* recurrence config — confirm Morning field names on live */ } : {}),
   };
   const r = await apiFetch('payments/form', { method: 'POST', body });
