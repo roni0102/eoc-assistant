@@ -107,8 +107,19 @@ function logQuery(meta) {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, lines: loadKB().items.length }));
 
-// TEMP: Morning auth diagnostic (no secret echoed) — confirms the live keys authenticate.
-app.get('/paydiag', rateLimit, async (_req, res) => { res.json(await morning.diagnose()); });
+// TEMP: Morning diagnostic (no secret echoed) — auth + a real payment-form attempt with the
+// exact error surfaced, so we can see why /checkout fails on the live host.
+app.get('/paydiag', rateLimit, async (_req, res) => {
+  const auth = await morning.diagnose();
+  let pay;
+  try {
+    const r = await morning.createPaymentForm({ kind: 'questions', description: 'EOC Assistant — diag', amountIncl: 6, amountEx: 5.08,
+      client: { firstName: 'Diag', lastName: 'Test', email: 'diag@test.co', phone: '0500000000', country: 'Israel' },
+      origin: 'https://eoc-assistant.onrender.com' });
+    pay = { ok: true, hasUrl: !!r.url, url: (r.url || '').slice(0, 60), raw: JSON.stringify(r.raw).slice(0, 160) };
+  } catch (e) { pay = { ok: false, error: String(e?.message || e).slice(0, 320) }; }
+  res.json({ auth: { ok: auth.ok, env: auth.env }, pay });
+});
 
 // Legal / contact pages (clean URLs) + the Purchasing Policy served explicitly as a real file,
 // so the links work even behind a custom domain / proxy (never caught by any SPA fallback).
