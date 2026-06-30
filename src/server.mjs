@@ -107,6 +107,9 @@ function logQuery(meta) {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, lines: loadKB().items.length }));
 
+// TEMP: Morning auth diagnostic (no secret echoed) — confirms the live keys authenticate.
+app.get('/paydiag', rateLimit, async (_req, res) => { res.json(await morning.diagnose()); });
+
 // Legal / contact pages (clean URLs) + the Purchasing Policy served explicitly as a real file,
 // so the links work even behind a custom domain / proxy (never caught by any SPA fallback).
 app.get('/accessibility', (_req, res) => res.sendFile(path.join(PUBLIC, 'accessibility.html')));
