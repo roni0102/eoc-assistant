@@ -154,4 +154,39 @@ export async function translate(text, lang = 'he') {
   return { text: out, model: TRANSLATE_MODEL };
 }
 
+/**
+ * genericizeQuestion(question): rewrite a client's question into a SHORT, generic, de-identified
+ * FAQ-style version for PUBLIC display — stripping any company, site, plant, city, person, project,
+ * drawing/document/order number, date, or unique quantity that could identify a project, keeping
+ * only the technical/regulatory essence. This is the safety layer that lets real client questions
+ * be shown publicly without leaking free-prose identifiers the regex scrubber can't catch.
+ * Returns { text } ('' if it can't be safely generalized); throws ANON_BLOCK if the result still
+ * trips the anonymity guard (fail-closed). Uses the cheap model.
+ */
+export async function genericizeQuestion(question) {
+  const res = await getClient().messages.create({
+    model: TRANSLATE_MODEL,
+    max_tokens: 200,
+    system:
+      'You turn an engineer\'s question about SI 6464 (Israeli standard — natural-gas piping & ' +
+      'industrial gas appliances) into a SHORT, GENERIC, anonymous FAQ entry for public display.\n' +
+      'Rules:\n' +
+      '- REMOVE every specific that could identify a project or party: company, client, site, plant, ' +
+      'city/location, person, project name, drawing/document/order numbers, dates, and any unusual ' +
+      'quantity unique to one project. Keep ONLY the general technical/regulatory question.\n' +
+      '- KEEP clause numbers and standard references exactly (SI 6464, §7.2.1.5, EN, ISO, NFPA, ASME) ' +
+      'and the general appliance type if mentioned (boiler, furnace, gas turbine, water heater, ' +
+      'thermal oil heater).\n' +
+      '- Output ONE clear general question, no preamble.\n' +
+      '- Write it in the SAME language as the input (Hebrew or English).\n' +
+      '- If the question cannot be generalized without revealing identifying specifics, output exactly: SKIP',
+    messages: [{ role: 'user', content: String(question).slice(0, 1000) }],
+  });
+  const out = res.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').trim();
+  if (!out || /^skip\b/i.test(out)) return { text: '' };
+  const hits = scanAnswer(out);
+  if (hits.length) { const e = new Error(`genericized question blocked by guard: ${hits.map((h) => h.match).join(', ')}`); e.code = 'ANON_BLOCK'; throw e; }
+  return { text: out.slice(0, 300) };
+}
+
 export { MODEL };

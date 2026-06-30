@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { retrieve, retrieveStandard, loadKB, loadStandard } from './retrieve.mjs';
 import { composeAnswer } from './answer.mjs';
-import { answerWithLLM, translate, LANG_NAMES, llmAvailable, MODEL } from './llm.mjs';
+import { answerWithLLM, translate, LANG_NAMES, llmAvailable, MODEL, genericizeQuestion } from './llm.mjs';
 import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
 import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail, sendRenewalReminder } from './mailer.mjs';
@@ -386,19 +386,23 @@ app.post('/ask', rateLimit, uploadMedia.array('files', 5), async (req, res) => {
       }
     }
     logQuery({ qlen: q.length, mode: retrieved.mode, covered: answer.covered, llm: !!answer.llm_answer, ms: Date.now() - t0 });
-    // Record the (anonymized) Q&A so it can be shared with other clients as a growing FAQ.
-    if (answer.covered) {
-      qalog.record({
-        question: q,
-        answer: answer.llm_answer || (answer.cards?.[0]?.requirement || ''),
-        clauses: (answer.cards || []).map((c) => c.clause).filter(Boolean),
-        tier: 'free',
-      });
-    }
     if (introFree) answer.free_intro = true;            // ungated freebie used → client gates next ask
     else if (quota) answer.free_remaining = quota.remaining;
     else answer.unlimited = true;                        // subscribers/admin = unlimited
     res.json(answer);
+    // Record the (anonymized) Q&A so it can be shared with other clients as a growing FAQ — AFTER
+    // responding, so the extra rephrasing call never delays the client's answer. The client's own
+    // wording is stored only scrubbed/internally; the PUBLIC panel shows `publicQ`, an LLM-made
+    // generic, de-identified rephrasing (''=can't generalize safely → kept internal, not shown).
+    if (answer.covered) {
+      const ans = answer.llm_answer || (answer.cards?.[0]?.requirement || '');
+      const clauses = (answer.cards || []).map((c) => c.clause).filter(Boolean);
+      (async () => {
+        let publicQ = '';
+        if (llmAvailable()) { try { publicQ = (await genericizeQuestion(q)).text; } catch (e) { if (e?.code !== 'ANON_BLOCK') console.error('[ask] genericize failed:', e?.message || e); publicQ = ''; } }
+        qalog.record({ question: q, publicQ, answer: ans, clauses, tier: 'free' });
+      })();
+    }
   } catch (err) {
     if (err.code === 'ANON_BLOCK') {
       // Fail closed: never leak. Log the block (without the offending text).

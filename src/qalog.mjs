@@ -43,29 +43,53 @@ function isPublic(e) {
 }
 
 /**
- * record({ question, answer, clauses, tier, lang }): scrub the question, keep the (already
- * anonymous) answer, tag chapter + language + public-eligibility, append a line.
+ * record({ question, answer, clauses, tier, lang, publicQ }): scrub the question (kept INTERNALLY
+ * for the owner's log/sheet), keep the already-anonymous answer, and — for the PUBLIC panel — use
+ * `publicQ`: an LLM-generated GENERIC, de-identified rephrasing (see llm.genericizeQuestion). The
+ * client's own wording is never shown publicly; only the clean rephrasing is. A row is public-
+ * eligible ONLY if a non-empty publicQ was supplied AND it passes the anonymity scan. (Rows logged
+ * without publicQ — e.g. legacy/seed entries — keep the old "clean scrubbed question" rule.)
  * Fire-and-forget; never throws into the request path.
  */
-export function record({ question, answer, clauses, tier, lang }) {
+export function record({ question, answer, clauses, tier, lang, publicQ }) {
   try {
     const q = scrub(norm(question)).slice(0, 600);
     if (!q || q.replace(/\[[^\]]+\]/g, '').replace(/[^\p{L}\p{N}]/gu, '').length < 4) return; // nothing useful left
     const a = scanAnswer(answer || '').length ? '' : norm(answer).slice(0, 4000); // never store a guard-tripping answer
+    // publicQ === undefined → caller opted out of the rephrasing layer (legacy: fall back to the
+    // scrubbed question). publicQ provided (even '') → public ONLY via a clean rephrasing.
+    const pq = publicQ != null ? scrub(norm(publicQ)).slice(0, 300) : null;
+    const pub = !!a && (pq != null ? (!!pq && autoPublic(pq)) : autoPublic(q));
     const entry = {
       id: crypto.randomBytes(8).toString('hex'),
       ts: new Date().toISOString(),
       tier: tier || 'free',
       q, a,
+      ...(pq != null ? { publicQ: pq } : {}), // the de-identified text shown publicly
       clauses: Array.isArray(clauses) ? clauses.slice(0, 6) : [],
       chapter: chapterOf(clauses),
       lang: lang || detectLang(question || q),
-      pub: !!a && autoPublic(q),   // public-eligible only if clean AND no redaction was needed
+      pub,
       approved: null,              // manual override: true=approve, false=hide, null=auto
     };
     fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
     fs.appendFileSync(LOG_PATH, JSON.stringify(entry) + '\n');
+    sendQAToSheet(entry); // mirror to the owner's Google Sheet (no-op unless SHEETS_WEBHOOK_URL set)
   } catch { /* logging must never break answering */ }
+}
+
+// Mirror each Q&A to the owner's Google Apps Script web app (SHEETS_WEBHOOK_URL) under type:"qa"
+// so it lands on a separate "Q&A" tab. Sends the SCRUBBED question + the public rephrasing + flags
+// (never raw text). Fire-and-forget; a no-op if the env var is unset.
+function sendQAToSheet(e) {
+  const url = process.env.SHEETS_WEBHOOK_URL;
+  if (!url) return;
+  Promise.resolve()
+    .then(() => fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'qa', ts: e.ts, q: e.q, publicQ: e.publicQ || '', shown: !!e.pub, chapter: e.chapter || '', lang: e.lang || '', tier: e.tier || '' }),
+    }))
+    .catch((err) => { try { console.error('qa sheets webhook failed:', err?.message || err); } catch {} });
 }
 
 function readAll() {
@@ -75,6 +99,11 @@ function readAll() {
   } catch { return []; }
 }
 
+// The text shown publicly: the de-identified rephrasing when present, else the scrubbed question
+// (legacy/seed rows). NEW rows are only public when they have a clean publicQ, so raw client
+// wording is never surfaced.
+const shownQ = (e) => e.publicQ || e.q;
+
 /** recent(limit): most-recent distinct PUBLIC questions, newest first. */
 export function recent(limit = 20) {
   const all = readAll();
@@ -82,10 +111,11 @@ export function recent(limit = 20) {
   for (let i = all.length - 1; i >= 0 && out.length < limit; i--) {
     const e = all[i];
     if (!isPublic(e)) continue;
-    const key = e.q.toLowerCase();
+    const disp = shownQ(e);
+    const key = disp.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ id: e.id, ts: e.ts, q: e.q, a: e.a, clauses: e.clauses, chapter: e.chapter || '' });
+    out.push({ id: e.id, ts: e.ts, q: disp, a: e.a, clauses: e.clauses, chapter: e.chapter || '' });
   }
   return out;
 }
@@ -96,12 +126,12 @@ export function search(query, limit = 10) {
   if (!terms.length) return recent(limit);
   const all = readAll().filter(isPublic);
   const scored = all.map((e) => {
-    const hay = (e.q + ' ' + (e.a || '')).toLowerCase();
+    const hay = (shownQ(e) + ' ' + (e.a || '')).toLowerCase(); // match only on text that is shown publicly
     let s = 0; for (const t of terms) if (hay.includes(t)) s++;
     return { e, s };
   }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
   const seen = new Set(), out = [];
-  for (const { e } of scored) { const k = e.q.toLowerCase(); if (seen.has(k)) continue; seen.add(k); out.push({ id: e.id, ts: e.ts, q: e.q, a: e.a, clauses: e.clauses, chapter: e.chapter || '' }); if (out.length >= limit) break; }
+  for (const { e } of scored) { const disp = shownQ(e); const k = disp.toLowerCase(); if (seen.has(k)) continue; seen.add(k); out.push({ id: e.id, ts: e.ts, q: disp, a: e.a, clauses: e.clauses, chapter: e.chapter || '' }); if (out.length >= limit) break; }
   return out;
 }
 
@@ -110,7 +140,7 @@ export function search(query, limit = 10) {
 export function pending(limit = 50) {
   return readAll().filter((e) => e.a && e.approved == null && !(e.pub !== undefined ? e.pub : autoPublic(String(e.q || ''))))
     .slice(-limit).reverse()
-    .map((e) => ({ id: e.id, ts: e.ts, q: e.q, a: e.a, chapter: e.chapter || '', lang: e.lang || '' }));
+    .map((e) => ({ id: e.id, ts: e.ts, q: e.q, publicQ: e.publicQ || '', a: e.a, chapter: e.chapter || '', lang: e.lang || '' }));
 }
 /** Approve (true) or hide (false) a stored question for the public panel. Rewrites the JSONL. */
 export function setApproval(id, approved) {
