@@ -106,8 +106,9 @@ function logQuery(meta) {
 }
 
 // Liveness probe — must respond instantly (no KB load) so the platform health check passes
-// even during a cold start, otherwise the deploy times out waiting on it.
-app.get('/healthz', (_req, res) => res.json({ ok: true }));
+// even during a cold start, otherwise the deploy times out waiting on it. Reports the data
+// directory (non-sensitive) to confirm the persistent disk is wired.
+app.get('/healthz', (_req, res) => res.json({ ok: true, dataDir: process.env.DATA_DIR || '(default ./data)' }));
 
 // Legal / contact pages (clean URLs) + the Purchasing Policy served explicitly as a real file,
 // so the links work even behind a custom domain / proxy (never caught by any SPA fallback).
