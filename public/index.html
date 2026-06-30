@@ -357,15 +357,14 @@
 <div id="gate" class="gate" hidden>
   <div class="gate-card">
     <div class="gate-logo"><span class="a">EOC</span> <span class="b">Assistant</span></div>
-    <div class="gate-sub">Tell us who you are to get started — then ask anything about your SI 6464 EOC, or upload it for a full review.</div>
+    <div class="gate-sub">Liked that? Just add your email to keep asking — it stays free. No phone needed.</div>
     <form id="gateForm" class="gate-form" autocomplete="on" novalidate>
-      <input id="gCompany" type="text" placeholder="Company name" autocomplete="organization" />
-      <input id="gEmail" type="email" placeholder="Work email" autocomplete="email" inputmode="email" />
-      <input id="gPhone" type="tel" placeholder="Phone number" autocomplete="tel" inputmode="tel" />
+      <input id="gEmail" type="email" placeholder="Your email" autocomplete="email" inputmode="email" />
+      <input id="gCompany" type="text" placeholder="Company (optional)" autocomplete="organization" />
       <div id="gateErr" class="gate-err" hidden></div>
-      <button type="submit" class="go" id="gateBtn">Enter</button>
+      <button type="submit" class="go" id="gateBtn">Continue — keep asking</button>
     </form>
-    <div class="gate-consent">We'll use your details to follow up about your EOC submission. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 5 questions per user; beyond that, a per-question payment or a monthly subscription is required. See our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
+    <div class="gate-consent">We store your email to follow up about your EOC. Your questions and interactions are stored and used anonymously to improve the assistant and may be shown anonymously to other clients — never revealing you, your company, or site. Answers are reference guidance only and don't guarantee the same response from the IB/ITL. The free plan includes 5 questions per user; beyond that, a per-question payment or a monthly subscription is required. See our <a href="/purchasing-policy.pdf" target="_blank" rel="noopener">Purchasing Policy &amp; Terms</a>.</div>
   </div>
 </div>
 
@@ -552,6 +551,10 @@ const store = {
   del(k){ try{ localStorage.removeItem(k); }catch{} },
 };
 let session = store.get('eoc_session');
+// Per-device id (persistent) — lets the backend allow ONE free ungated question before the light gate.
+let deviceId = store.get('eoc_device');
+if(!deviceId){ try{ deviceId = (crypto.randomUUID ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(16).slice(2))); }catch{ deviceId = Date.now()+'-'+Math.random().toString(16).slice(2); } store.set('eoc_device', deviceId); }
+let pendingAsk=''; // question to auto-resend after the light gate
 // ---- dark mode (persisted) ----
 const SUN_ICON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M4.5 4.5l1.5 1.5M18 18l1.5 1.5M2.5 12h2M19.5 12h2M4.5 19.5l1.5-1.5M18 6l1.5-1.5"/></svg>';
 const MOON_ICON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
@@ -706,14 +709,14 @@ async function ask(){
     let res;
     if(files.length){
       const fd=new FormData(); fd.append('q',q); fd.append('history',JSON.stringify(convo)); for(const f of files) fd.append('files',f);
-      res = await fetch('/ask',{method:'POST', headers:{'x-session':session}, body: fd});
+      res = await fetch('/ask',{method:'POST', headers:{'x-session':session,'x-device':deviceId}, body: fd});
     } else {
-      res = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json','x-session':session}, body: JSON.stringify({q, history: convo})});
+      res = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json','x-session':session,'x-device':deviceId}, body: JSON.stringify({q, history: convo})});
     }
     const data = await res.json();
-    // session expired mid-query → clean up this question and re-gate; restore the box so the
-    // user can re-ask in one click after entering details (no orphaned bubble left behind).
-    if(res.status===401 && data.gate){ pending.remove(); userBubble.remove(); $('#q').value=q; lastQ=''; openGate(); return; }
+    // Free ungated question used (or session expired) → light gate. Remember the question so it's
+    // auto-resent the moment they add their email (no orphaned bubble, no retyping).
+    if(res.status===401 && data.gate){ pending.remove(); userBubble.remove(); $('#q').value=q; lastQ=''; pendingAsk=q; openGate(); return; }
     if(res.status===429 && data.limit){
       pending.classList.remove('pending');
       const packN=(ME.pricing&&ME.pricing.questionsPack)||'';
@@ -788,35 +791,37 @@ async function loadShared(){
 $('#sharedQA').addEventListener('toggle', ()=>{ if($('#sharedQA').open && !sharedLoaded){ sharedLoaded=true; loadShared(); } });
 
 // ---- entry gate (lead capture) ----
-function openGate(){ session=''; store.del('eoc_session'); $('#gate').hidden=false; document.body.classList.add('gated'); setTimeout(()=>$('#gCompany').focus(),50); }
+function openGate(){ $('#gate').hidden=false; document.body.classList.add('gated'); setTimeout(()=>$('#gEmail').focus(),50); }
 function closeGate(){ $('#gate').hidden=true; document.body.classList.remove('gated'); }
-// Validate any stored session on load so the gate shows UP FRONT (not mid-query) when the
-// server has forgotten the token (e.g. after a free-instance restart). On a network error we
-// keep the session — a later 401 still re-gates as a fallback.
+// No gate on entry — value first. Just validate any stored session, then load public account/
+// pricing info. A brand-new visitor can ask one free question; the light gate appears only after.
 (async function initGate(){
   if(session){
     try{ const r=await fetch('/session',{headers:{'x-session':session}}); if(!r.ok){ session=''; store.del('eoc_session'); } }catch{}
   }
-  if(!session) openGate(); else refreshMe();
+  refreshMe(); // /me is public (pricing); includes entitlements only when a session is present
 })();
 let gating=false;
+// LIGHT free-tier gate: email required, company optional, NO phone. On success we get a session
+// token, remember it on the device, and auto-resend the question the visitor was trying to ask.
 async function submitGate(){
   if(gating) return;
-  const company=$('#gCompany').value.trim(), email=$('#gEmail').value.trim(), phone=$('#gPhone').value.trim();
+  const email=$('#gEmail').value.trim(), company=$('#gCompany').value.trim();
   const err=$('#gateErr'); const show=(m)=>{ err.textContent=m; err.hidden=false; };
-  if(company.length<2) return show('Please enter your company name.');
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) return show('Please enter a valid email address.');
-  if((phone.match(/\d/g)||[]).length<7) return show('Please enter a valid phone number (at least 7 digits).');
   err.hidden=true; gating=true;
-  const btn=$('#gateBtn'); btn.disabled=true; btn.textContent='…';
+  const btn=$('#gateBtn'); const old=btn.textContent; btn.disabled=true; btn.textContent='…';
   try{
-    const r=await fetch('/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({company,email,phone})});
+    const r=await fetch('/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email, company, light:true})});
     let data={}; try{ data=await r.json(); }catch{}
     if(!r.ok){ show(data.error || ('Something went wrong ('+r.status+'). Please try again.')); return; }
     if(!data.token){ show('Unexpected response — please try again.'); return; }
-    session=data.token; store.set('eoc_session', session); closeGate(); refreshMe();
+    session=data.token; store.set('eoc_session', session);
+    store.set('eoc_email', email); if(company) store.set('eoc_company', company); // prefill checkout later
+    closeGate(); refreshMe();
+    if(pendingAsk){ const pq=pendingAsk; pendingAsk=''; $('#q').value=pq; ask(); } // auto-resend the held question
   }catch(ex){ show('Could not reach the server — check your connection and try again.'); }
-  finally{ gating=false; btn.disabled=false; btn.textContent='Enter'; }
+  finally{ gating=false; btn.disabled=false; btn.textContent=old||'Continue — keep asking'; }
 }
 $('#gateForm').addEventListener('submit',(e)=>{ e.preventDefault(); submitGate(); });
 $('#gateBtn').addEventListener('click',(e)=>{ e.preventDefault(); submitGate(); });
@@ -975,8 +980,10 @@ function applyCheckoutLang(lang){ coLang=lang; const t=CO_I18N[lang]; const he=l
 $('#coLangToggle').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) applyCheckoutLang(b.dataset.cl); });
 function goCheckout(kind){
   coKind=kind;
-  ['coFirst','coLast','coPhone','coCountry','coCompany'].forEach(id=>{ const el=$('#'+id); if(el) el.value=''; });
-  $('#coEmail').value=(ME&&ME.email)||'';
+  ['coFirst','coLast','coPhone','coCountry'].forEach(id=>{ const el=$('#'+id); if(el) el.value=''; });
+  // Prefill from anything already captured (light gate / prior checkout) so nothing is retyped.
+  $('#coEmail').value=(ME&&ME.email)||store.get('eoc_email')||'';
+  $('#coCompany').value=store.get('eoc_company')||'';
   $('#coTerms').checked=false; $('#coNote').textContent=''; $('#coNote').className='expert-note';
   applyCheckoutLang(coLang); // default Hebrew
   $('#checkoutModal').hidden=false; $('#coFirst').focus();

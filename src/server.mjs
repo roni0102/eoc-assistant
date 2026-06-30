@@ -122,10 +122,10 @@ app.get('/session', requireGate, (_req, res) => res.json({ ok: true }));
 
 // Lead-capture entry gate: store the visitor's contact details, unlock the session.
 app.post('/lead', rateLimit, (req, res) => {
-  const { email, phone, company } = req.body || {};
-  const r = leads.addLead({ email, phone, company });
+  const { email, phone, company, light } = req.body || {};
+  const r = leads.addLead({ email, phone, company, light: !!light });
   if (!r.ok) return res.status(400).json({ error: r.error });
-  console.log(`[lead] new lead captured (company len=${String(company).length})`);
+  console.log(`[lead] new ${light ? 'light ' : ''}lead captured (tier=free)`);
   res.json({ ok: true, token: r.token });
 });
 
@@ -178,10 +178,14 @@ app.post('/translate', rateLimit, requireGate, async (req, res) => {
 
 // --- Billing (Grow / Meshulam) ---------------------------------------------------------
 // Account/entitlement status for the current visitor (drives the UI's pay buttons).
-app.get('/me', requireGate, (req, res) => {
-  const email = leads.emailForToken(req.sessionToken);
-  const ent = billing.entitlements(email);
-  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, email: email || '', freeLimit: leads.freeLimit() });
+// Public account/pricing status. Works WITHOUT a session (pricing is public so the Pricing tab
+// renders for brand-new visitors); entitlements/email/admin are included only when gated.
+app.get('/me', (req, res) => {
+  const token = req.get('x-session') || '';
+  const gated = leads.validToken(token);
+  const email = gated ? leads.emailForToken(token) : '';
+  const ent = email ? billing.entitlements(email) : {};
+  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, email: email || '', gated, freeLimit: leads.freeLimit() });
 });
 
 // Admin/owner unlock: a correct ADMIN_KEY (env only) grants this email unlimited questions +
@@ -307,25 +311,35 @@ app.post('/expert', rateLimit, requireGate, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/ask', rateLimit, requireGate, uploadMedia.array('files', 5), async (req, res) => {
+// NB: /ask is NOT gated on entry. A brand-new device gets ONE free, ungated question (value
+// first). After that, a light email gate (no phone) is required; gated users then have the
+// per-email free cap (subscribers/admin = unlimited).
+app.post('/ask', rateLimit, uploadMedia.array('files', 5), async (req, res) => {
   const t0 = Date.now();
   const q = String(req.body?.q ?? '').slice(0, 2000).trim();
   if (!q) return res.status(400).json({ error: 'Empty query.' });
-  // Free-plan cap (token-spend control). Subscribers skip the cap entirely (unlimited).
-  const askEmail = leads.emailForToken(req.sessionToken);
-  const subscribed = billing.hasSub(askEmail) || billing.isAdmin(askEmail); // admin = unlimited
-  let quota = null;
-  if (!subscribed) {
-    quota = leads.useQuery(req.sessionToken, billing.extraQuestions(askEmail));
-    if (!quota.ok) {
-      const on = billing.billingAvailable();
-      return res.status(429).json({
-        limit: true,
-        canSubscribe: on,
-        canBuyQuestions: on,
-        message: `You've used all ${quota.allowance} of your questions.${on ? ' Buy more questions, subscribe for unlimited, or talk to a real ITL expert.' : ' For more, talk to a real ITL expert.'}`,
-      });
+  const token = req.get('x-session') || req.body?.session || '';
+  const gated = leads.validToken(token);
+  let askEmail = '', subscribed = false, quota = null, introFree = false;
+  if (gated) {
+    req.sessionToken = token;
+    askEmail = leads.emailForToken(token);
+    subscribed = billing.hasSub(askEmail) || billing.isAdmin(askEmail); // admin = unlimited
+    if (!subscribed) {
+      quota = leads.useQuery(token, billing.extraQuestions(askEmail));
+      if (!quota.ok) {
+        const on = billing.billingAvailable();
+        return res.status(429).json({
+          limit: true, canSubscribe: on, canBuyQuestions: on,
+          message: `You've used all ${quota.allowance} of your questions.${on ? ' Buy more questions, subscribe for unlimited, or talk to a real ITL expert.' : ' For more, talk to a real ITL expert.'}`,
+        });
+      }
     }
+  } else {
+    // Brand-new visitor: one free ungated question per device, then the light email gate.
+    const fa = leads.useFreeAsk(req.get('x-device'));
+    if (!fa.ok) return res.status(401).json({ gate: 'light', error: 'Add your email to keep asking — it stays free.' });
+    introFree = true;
   }
   // prior conversation turns sent by the browser (history is a JSON string under multipart)
   let history = req.body?.history;
@@ -370,7 +384,9 @@ app.post('/ask', rateLimit, requireGate, uploadMedia.array('files', 5), async (r
         tier: 'free',
       });
     }
-    if (quota) answer.free_remaining = quota.remaining; else answer.unlimited = true; // subscribers = unlimited
+    if (introFree) answer.free_intro = true;            // ungated freebie used → client gates next ask
+    else if (quota) answer.free_remaining = quota.remaining;
+    else answer.unlimited = true;                        // subscribers/admin = unlimited
     res.json(answer);
   } catch (err) {
     if (err.code === 'ANON_BLOCK') {

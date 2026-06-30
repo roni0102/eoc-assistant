@@ -20,6 +20,7 @@ const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '..', 'data');
 const LEADS_PATH = path.join(DATA_DIR, 'leads.jsonl');
 const USAGE_PATH = path.join(DATA_DIR, 'usage.json'); // per-email question counts (durable cap)
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json'); // active tokens (survive restarts)
+const DEVICES_PATH = path.join(DATA_DIR, 'devices.json'); // per-device free ungated-ask counts
 
 const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 export const validEmail = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(norm(s));
@@ -47,6 +48,20 @@ function persistUsage() {
 const emailKey = (token) => String(tokenEmail.get(token) || token).toLowerCase();
 
 export const freeLimit = () => FREE_LIMIT;
+
+// Free-tier "value first": a brand-new device may ask FREE_UNGATED questions with NO gate; after
+// that, the light email gate is required. Counted per device id (sent by the browser), persisted.
+const FREE_UNGATED = Number(process.env.FREE_UNGATED || 1);
+const freeAsks = (() => { try { return new Map(Object.entries(JSON.parse(fs.readFileSync(DEVICES_PATH, 'utf8')))); } catch { return new Map(); } })();
+function persistDevices() { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DEVICES_PATH, JSON.stringify(Object.fromEntries(freeAsks))); } catch {} }
+/** Consume one ungated free question for a device. {ok:false} once the device's free quota is spent. */
+export function useFreeAsk(deviceId) {
+  const k = String(deviceId || '').slice(0, 64) || 'anon';
+  const n = freeAsks.get(k) || 0;
+  if (n >= FREE_UNGATED) return { ok: false, used: n };
+  freeAsks.set(k, n + 1); persistDevices();
+  return { ok: true, used: n + 1, remaining: FREE_UNGATED - (n + 1) };
+}
 /** Consume one free question (per email). Returns {ok, used, remaining, limit}; ok:false when over cap. */
 export function useQuery(token, extra = 0) {
   const key = emailKey(token);
@@ -96,11 +111,14 @@ function sendToSheet(lead) {
  * addLead({ email, phone, company }) -> { ok, token } | { ok:false, error }
  * Validates, appends the lead, and issues a session token.
  */
-export function addLead({ email, phone, company }) {
+export function addLead({ email, phone, company, light }) {
   email = norm(email); phone = norm(phone); company = norm(company);
   if (!validEmail(email)) return { ok: false, error: 'Please enter a valid email address.' };
-  if (!validPhone(phone)) return { ok: false, error: 'Please enter a valid phone number.' };
-  if (!validCompany(company)) return { ok: false, error: 'Please enter your company name.' };
+  if (!light) { // full gate (legacy / non-free): phone + company required
+    if (!validPhone(phone)) return { ok: false, error: 'Please enter a valid phone number.' };
+    if (!validCompany(company)) return { ok: false, error: 'Please enter your company name.' };
+  }
+  // light free-tier gate: email required; company optional; phone not asked.
   const lead = { id: crypto.randomBytes(8).toString('hex'), ts: new Date().toISOString(), email, phone, company, tier: 'free' };
   try {
     fs.mkdirSync(path.dirname(LEADS_PATH), { recursive: true });
