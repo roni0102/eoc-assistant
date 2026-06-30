@@ -280,24 +280,28 @@ app.post('/pay/callback', rateLimit, async (req, res) => {
   try {
     const b = req.body || {};
     _lastHook = { headerNames: Object.keys(req.headers), headers: _mask(req.headers), bodyKeys: Object.keys(b), body: _mask(b), query: req.query };
-    // First-run diagnostics — reveals Morning's actual webhook shape so we can finalize the
-    // secret check + id/email mapping (no secret value is logged).
-    console.log(`[pay] webhook received · keys=[${Object.keys(b).join(',')}] · status=${b.status ?? b.paymentStatus ?? '?'} · hasHeaderSecret=${!!(req.get('x-morning-secret') || req.get('x-webhook-secret'))}`);
-    const ok = morning.verifyWebhookSecret({ headerSecret: req.get('x-morning-secret') || req.get('x-webhook-secret'), bodySecret: b.secret });
-    if (!ok) { console.warn('[pay] webhook rejected: bad/no secret'); return; }
-    // Confirm the payment actually succeeded.
-    const status = String(b.status ?? b.paymentStatus ?? '').toLowerCase();
-    const paid = b.success === true || status === 'success' || status === 'paid' || status === '1' || Number(b.errorCode) === 0;
-    if (!paid) { console.log('[pay] webhook: not a success event, ignoring'); return; }
-    // Map back to what was bought: by Morning id, else by client email. Always CLAIM (mark done)
-    // before granting, so a duplicate webhook can't double-grant (takePending returns null if done).
-    const id = b.id || b.formId || b.paymentId || b.documentId;
-    const email = (b.client?.emails?.[0] || b.email || '').toLowerCase();
-    let rec = id ? billing.takePending(id) : null;
-    if (!rec) { const f = billing.findPending({ email }); if (f) rec = billing.takePending(f.id); }
-    if (!rec) { console.warn('[pay] webhook: no unclaimed pending payment matched (already granted or unknown)'); return; }
+    // Morning (GreenInvoice/2.1) does NOT send a shared secret or signature on the webhook — the
+    // body only carries the document id. So authenticity is established by RE-FETCHING the document
+    // from Morning's authenticated API: only our own API key can read our documents, and the grant
+    // is tied to the email ON that document, so a forged webhook can't redirect credits to anyone.
+    const docId = b.id || b.document_id || b.documentId;
+    if (!docId) { console.warn('[pay] webhook: no document id in payload'); return; }
+    let doc;
+    try { doc = await morning.getDocument(docId); }
+    catch (e) { console.warn(`[pay] webhook: document ${docId} fetch failed (unverified), ignoring: ${e?.message || e}`); return; }
+    // A type-320 (tax invoice + receipt) with status 1 (active, not cancelled) = payment received.
+    if (!doc || String(doc.type) !== '320' || Number(doc.status) !== 1) {
+      console.log(`[pay] webhook: doc ${docId} not a valid paid 320 (type=${doc?.type} status=${doc?.status}), ignoring`); return;
+    }
+    const email = (doc.client?.emails?.[0] || '').toLowerCase();
+    if (!email) { console.warn(`[pay] webhook: doc ${doc.number} has no client email`); return; }
+    // Match the buyer's open purchase and CLAIM it before granting, so a duplicate/retried webhook
+    // can't double-grant (takePending returns null once claimed).
+    const f = billing.findPending({ email });
+    const rec = f ? billing.takePending(f.id) : null;
+    if (!rec) { console.warn(`[pay] webhook: no unclaimed pending for ${email} (already granted or unknown)`); return; }
     billing.grant(rec.email, rec.kind);
-    console.log(`[pay] ✓ payment confirmed → granted ${rec.kind} to ${rec.email}`);
+    console.log(`[pay] ✓ payment confirmed (doc ${doc.number}, ₪${doc.amount}) → granted ${rec.kind} to ${rec.email}`);
   } catch (e) { console.error('[pay] webhook error:', e?.message || e); }
 });
 
