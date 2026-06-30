@@ -98,10 +98,6 @@ const toCountryCode = (c) => COUNTRY_CODE[c] || (/^[A-Za-z]{2}$/.test(String(c |
  */
 export async function createPaymentForm({ kind, description, amountIncl, amountEx, client = {}, recurring = false, origin }) {
   const base = process.env.BASE_URL || origin;
-  // Ex-VAT line price at 4-decimal precision so (line × (1+VAT)) rounds back to EXACTLY amountIncl.
-  // (Using the 2-decimal ex price caused errorCode 2422 "receipts vs payments mismatch" on tiers
-  // where ex×1.18 ≠ the whole-shekel incl price, e.g. ₪6/₪115/₪673.)
-  const linePrice = Math.round((amountIncl / (1 + VAT_RATE)) * 10000) / 10000;
   const body = {
     description,                                  // REQUIRED top-level
     type: DOC_TAX_INVOICE_RECEIPT,
@@ -119,8 +115,9 @@ export async function createPaymentForm({ kind, description, amountIncl, amountE
       ...(client.company ? { businessName: client.company } : {}),
       add: true,
     },
-    // Line priced EX-VAT so the 320 invoice = line + 18% VAT = amount (balances the receipt).
-    income: [{ description, quantity: 1, price: linePrice, currency: 'ILS', vatType: 0 }],
+    // Line priced at the VAT-INCLUSIVE amount with vatType:1 (= price INCLUDES VAT) → the invoice
+    // total = amountIncl with 18% VAT extracted, and the receipt balances (no rounding mismatch).
+    income: [{ description, quantity: 1, price: amountIncl, currency: 'ILS', vatType: 1 }],
     remarks: `EOC Assistant · ${kind}`,
     successUrl: `${origin}/?paid=${kind}`,
     failureUrl: `${origin}/?canceled=1`,

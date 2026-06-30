@@ -107,30 +107,14 @@ function logQuery(meta) {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true, lines: loadKB().items.length }));
 
-// TEMP: probe several payment-form body shapes for the ₪6 tier to find one that balances the
-// type-320 receipt (returns a URL) — no secret echoed.
+// TEMP: confirm the real createPaymentForm returns a URL on the live host (no secret echoed).
 app.get('/paydiag', rateLimit, async (_req, res) => {
-  let token; try { token = await morning.getToken(); } catch (e) { return res.json({ auth: false, error: String(e.message) }); }
-  const PID = process.env.GREENINVOICE_PLUGIN_ID;
-  const C = { lang: 'he', currency: 'ILS', pluginId: PID, description: 'EOC Assistant — diag', type: 320,
-    client: { name: 'Diag Test', emails: ['diag@test.co'], add: false },
-    successUrl: 'https://eoc-assistant.onrender.com/?paid=questions', failureUrl: 'https://eoc-assistant.onrender.com/?canceled=1', notifyUrl: 'https://eoc-assistant.onrender.com/pay/callback' };
-  const variants = {
-    'amount6 income6 vat1':        { ...C, amount: 6, income: [{ description: 'q', quantity: 1, price: 6, currency: 'ILS', vatType: 1 }] },
-    'amount6 income6 vat2':        { ...C, amount: 6, income: [{ description: 'q', quantity: 1, price: 6, currency: 'ILS', vatType: 2 }] },
-    'amount6 no-income':           { ...C, amount: 6 },
-    'no-amount income5.0847 vat0': { ...C, income: [{ description: 'q', quantity: 1, price: 5.0847, currency: 'ILS', vatType: 0 }] },
-    'amount6 income6 vat0 docVat1':{ ...C, vatType: 1, amount: 6, income: [{ description: 'q', quantity: 1, price: 6, currency: 'ILS', vatType: 0 }] },
-  };
-  const out = {};
-  for (const [n, b] of Object.entries(variants)) {
-    try {
-      const r = await fetch(morning.baseUrl() + 'payments/form', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
-      const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch {}
-      out[n] = j.url ? ('✅ URL') : (`${r.status} ${j.errorCode}:${j.errorMessage || t.slice(0, 50)}`);
-    } catch (e) { out[n] = 'ERR ' + String(e.message).slice(0, 50); }
-  }
-  res.json(out);
+  try {
+    const p = billing.pricing();
+    const r = await morning.createPaymentForm({ kind: 'questions', description: 'EOC Assistant — diag', amountIncl: p.incl.questions,
+      client: { firstName: 'Diag', lastName: 'Test', email: 'diag@test.co', phone: '0500000000', country: 'Israel' }, origin: 'https://eoc-assistant.onrender.com' });
+    res.json({ ok: !!r.url, url: (r.url || '').slice(0, 50) });
+  } catch (e) { res.json({ ok: false, error: String(e?.message || e).slice(0, 300) }); }
 });
 
 // Legal / contact pages (clean URLs) + the Purchasing Policy served explicitly as a real file,
