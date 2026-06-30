@@ -273,6 +273,9 @@ app.post('/pay/callback', rateLimit, async (req, res) => {
   res.json({ received: true }); // ack immediately so Morning doesn't retry-storm
   try {
     const b = req.body || {};
+    // First-run diagnostics — reveals Morning's actual webhook shape so we can finalize the
+    // secret check + id/email mapping (no secret value is logged).
+    console.log(`[pay] webhook received · keys=[${Object.keys(b).join(',')}] · status=${b.status ?? b.paymentStatus ?? '?'} · hasHeaderSecret=${!!(req.get('x-morning-secret') || req.get('x-webhook-secret'))}`);
     const ok = morning.verifyWebhookSecret({ headerSecret: req.get('x-morning-secret') || req.get('x-webhook-secret'), bodySecret: b.secret });
     if (!ok) { console.warn('[pay] webhook rejected: bad/no secret'); return; }
     // Confirm the payment actually succeeded.
