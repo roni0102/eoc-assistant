@@ -98,7 +98,10 @@ const toCountryCode = (c) => COUNTRY_CODE[c] || (/^[A-Za-z]{2}$/.test(String(c |
  */
 export async function createPaymentForm({ kind, description, amountIncl, amountEx, client = {}, recurring = false, origin }) {
   const base = process.env.BASE_URL || origin;
-  const linePrice = (amountEx != null) ? amountEx : Math.round((amountIncl / (1 + VAT_RATE)) * 100) / 100; // ex-VAT line
+  // Ex-VAT line price at 4-decimal precision so (line × (1+VAT)) rounds back to EXACTLY amountIncl.
+  // (Using the 2-decimal ex price caused errorCode 2422 "receipts vs payments mismatch" on tiers
+  // where ex×1.18 ≠ the whole-shekel incl price, e.g. ₪6/₪115/₪673.)
+  const linePrice = Math.round((amountIncl / (1 + VAT_RATE)) * 10000) / 10000;
   const body = {
     description,                                  // REQUIRED top-level
     type: DOC_TAX_INVOICE_RECEIPT,
