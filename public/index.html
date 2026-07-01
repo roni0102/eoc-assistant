@@ -383,7 +383,7 @@
 
 <div class="wrap">
   <header class="hero">
-    <div class="tag" id="heroTag">SI 6464 (2017), Chapters 4–7 — natural-gas piping &amp; industrial appliances (steam boilers, furnaces, water heaters, turbines &amp; more). Ask by clause (e.g. 7.2.1.5) or describe an issue; answers draw on past EOCs, fully anonymized.</div>
+    <div class="tag" id="heroTag">SI 6464 (2017), Chapters 4–7 — natural-gas piping &amp; industrial appliances (steam boilers, furnaces, water heaters, turbines &amp; more). Ask by clause (e.g. 7.2.1.5) or describe an issue; answers draw on ITL's inspection experience, fully anonymized.</div>
   </header>
 
   <div id="freeView">
@@ -575,18 +575,22 @@ const heMost = (s) => { const t = String(s || ''); return (t.match(/[֐-׿]/g) |
 const esc = (s) => (s||'').replace(/[&<>]/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function rtlAttr(s){ return isHe(s) ? ' class="body rtl"' : ' class="body"'; }
 
-function freqTag(n){ return `<span class="freq">${n} project${n>1?'s':''}</span>`; }
+// Show prevalence as an approximate percentage of comparable cases (never raw project/EOC counts).
+function freqTag(n, total, suffix){
+  if(total && total>0){ const pct=Math.max(1,Math.min(100,Math.round(n/total*100))); return `<span class="freq">~${pct}%${suffix?' '+suffix:''}</span>`; }
+  return `<span class="freq">common</span>`;
+}
 
-function acceptedBlock(p){
+function acceptedBlock(p, total){
   return `<div class="pat${p.is_dominant?' dom':''}">
-    <div class="patmeta">${p.is_dominant?'<b>Most common accepted approach</b> · ':''}${freqTag(p.frequency)}</div>
+    <div class="patmeta">${p.is_dominant?'<b>Most common accepted approach</b> · ':''}${freqTag(p.frequency, total, 'alignment')}</div>
     <div class="cmt"${isHe(p.pattern)?' dir="rtl"':''}>${esc(p.pattern)}</div>
   </div>`;
 }
-function ibBlock(r){
+function ibBlock(r, total){
   let cls = ''; if(/condition/.test(r.outcome)) cls=' cond'; if(/comment/.test(r.outcome)) cls=' risk';
   return `<div class="ib">
-    <div class="out${cls}">IB ${esc(r.outcome)} · ${freqTag(r.frequency)}</div>
+    <div class="out${cls}">IB ${esc(r.outcome)} · ${freqTag(r.frequency, total)}</div>
     <div class="cmt"${isHe(r.ib_comment)?' dir="rtl"':''}>${esc(r.ib_comment)}</div>
     ${r.closing_note?`<div class="close"${isHe(r.closing_note)?' dir="rtl"':''}>Closing approach: ${esc(r.closing_note)}</div>`:''}
   </div>`;
@@ -597,15 +601,14 @@ function card(c){
   const ib = (c.ib_responses||[]);
   const pit = (c.common_pitfalls||[]);
   return `<div class="card">
-    <div><span class="lineno">${esc(c.form||'')} §${esc(c.clause)}</span><span class="sect">${esc(c.section||'')}</span>
-      ${c.corpus_count?`<span class="corpus">learned from ${c.corpus_count} past EOC${c.corpus_count>1?'s':''}</span>`:''}</div>
+    <div><span class="lineno">${esc(c.form||'')} §${esc(c.clause)}</span><span class="sect">${esc(c.section||'')}</span></div>
     ${c.requirement?`<div class="doc"${isHe(c.requirement)?' dir="rtl"':''}>${esc(c.requirement)}</div>`:`<div class="doc">SI 6464 §${esc(c.clause)}</div>`}
 
     <div class="block"><h4>How this item is actually answered (from the corpus)</h4>
-      ${acc.length?acc.map(acceptedBlock).join('')
+      ${acc.length?acc.map(p=>acceptedBlock(p, c.corpus_count)).join('')
         :`<div class="body" style="color:var(--muted)">No anonymized accepted-reply pattern captured for this item yet.</div>`}</div>
 
-    ${ib.length?`<div class="block"><h4>IB comments seen on this item & how it closes</h4>${ib.map(ibBlock).join('')}</div>`:''}
+    ${ib.length?`<div class="block"><h4>IB comments seen on this item & how it closes</h4>${ib.map(r=>ibBlock(r, c.corpus_count)).join('')}</div>`:''}
 
     ${pit.length?`<div class="block"><h4>Common pitfalls</h4><ul class="pit">${pit.map(p=>`<li${isHe(p)?' dir="rtl"':''}>${esc(p)}</li>`).join('')}</ul></div>`:''}
 
@@ -1096,8 +1099,7 @@ function revCard(it){
   const r=it.readiness||'NEEDS_ATTENTION'; const cls=READY_CLS[r]||'attention';
   return `<div class="rev ${cls}">
     <div class="rev-head"><span class="vbadge ${cls}">${esc(READY_LABEL[r]||r)}</span><b>§${esc(it.clause)}</b>
-      ${it.row?`<span class="rowno">EOC row ${esc(String(it.row))}</span>`:''}
-      ${it.observed_in_projects?`<span class="freq">${it.observed_in_projects} past EOCs</span>`:''}</div>
+      ${it.row?`<span class="rowno">EOC row ${esc(String(it.row))}</span>`:''}</div>
     ${it.requirement?`<div class="req"${isHe(it.requirement)?' dir="rtl"':''}>${esc(it.requirement)}</div>`:''}
     ${it.ib_expectations?`<div class="line exp"><b>What the IB/ITL will expect:</b> ${esc(it.ib_expectations)}</div>`:''}
     ${it.client_answer?`<div class="line"><b>Your reply:</b> ${esc(it.client_answer)}</div>`:''}
