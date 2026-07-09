@@ -62,13 +62,15 @@ export const PATTERNS = [
   { name: 'path', re: /[\p{L}\p{N}_. -]+(?:\\[\p{L}\p{N}_. -]+)+/gu, repl: '[path]' },
   // Email addresses
   { name: 'email', re: /\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g, repl: '[email]' },
-  // Israeli phone numbers (0X / 05X — xxxxxxx, and +972 variants)
-  { name: 'phone', re: /\b0\d{1,2}[-\s]?\d{7}\b|\b\+972[-\s]?\d{1,2}[-\s]?\d{7}\b/g, repl: '[phone]' },
-  // Dates tied to a project: 14.04.15, 14/4/2015, 2015-04-14, and bare 6–8 digit dates (050814).
-  // The lookarounds exclude SI 6464 clause paths like 7.2.1.10.22 (a "2.1.10" embedded in a
-  // longer dotted number is a clause ref, not a date) — otherwise legitimate clause citations
-  // get over-redacted.
-  { name: 'date', re: /(?<![\d.])\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}(?![\d.])|\b\d{4}-\d{2}-\d{2}\b|\b\d{6,8}\b/g, repl: '[date]' },
+  // Israeli phone numbers (0X / 05X — xxxxxxx, and +972 variants, separated or not).
+  // NOTE: the +972 form must use (?<!\d) not \b — a "+" after a space has no word boundary,
+  // so \b\+972 never matched (missed every unseparated "+972541234567").
+  { name: 'phone', re: /\b0\d{1,2}[-\s]?\d{7}\b|(?<!\d)\+972[-\s]?\d{1,2}[-\s]?\d{7}\b/g, repl: '[phone]' },
+  // Dates + long bare digit runs (6 or more) tied to a project: 14.04.15, 14/4/2015, 2015-04-14,
+  // 050814, plus 9-digit Israeli IDs / unseparated phones / long order numbers (\d{6,}, not just
+  // 6-8 — a run of 9+ digits was slipping through entirely). The lookarounds exclude SI 6464 clause
+  // paths like 7.2.1.10.22 (a "2.1.10" inside a longer dotted number is a clause ref, not a date).
+  { name: 'date', re: /(?<![\d.])\d{1,2}[.\/]\d{1,2}[.\/]\d{2,4}(?![\d.])|\b\d{4}-\d{2}-\d{2}\b|(?<![\d.])\d{6,}(?![\d.])/g, repl: '[date]' },
   // EOC reference codes: AN13631.729 / AM13681.636
   { name: 'eoc-ref', re: /\b[A-Z]{2}\d{4,}\.\d+\b/g, repl: '[document ref]' },
   // Engineering doc / drawing codes: any - _ / -joined alphanumeric token that
@@ -125,7 +127,7 @@ export function scrub(text) {
 // the worst outcome). Scrubbed text must contain none of these.
 const SCAN_EXTRA = [
   { name: 'path-sep', re: /\\[\p{L}\p{N}]/gu },                       // backslash path segment
-  { name: 'date-like', re: /(?<![\d.])\d{1,2}[./]\d{1,2}[./]\d{2,4}(?![\d.])|\b\d{6,8}\b/g },
+  { name: 'date-like', re: /(?<![\d.])\d{1,2}[./]\d{1,2}[./]\d{2,4}(?![\d.])|(?<![\d.])\d{6,}(?![\d.])/g },
   { name: 'code-like', re: /(?<!\b(?:EN|ISO|IEC|SI|NFPA|UL|ASME|DIN|API|BS|CEN|CSA|IGE|ASTM|AGA|UP)\s)(?:\b[A-Za-z]{2,}[-_/]\d{2,}\b|\b\d{2,}[-_/]\d{2,}\b)/g },
 ];
 

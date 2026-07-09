@@ -40,17 +40,20 @@ SECTION CONSISTENCY: rows carry a "section". When a requirement is cross-cutting
 Return STRICT JSON (no prose outside the array), one object per row:
 { "row": <number>, "readiness": "READY"|"NEEDS_ATTENTION"|"N/A"|"MISSING", "ib_expectations": "<always filled; the specific evidence the IB expects>", "reply_assessment": "<short read of the typed reply; acknowledge you haven't seen the attached evidence>", "suggested_fix": "<concrete wording/evidence that would satisfy the IB; empty only if READY>" }
 
-ALWAYS populate ib_expectations (even when READY). Cite the SI 6464 clause when stating a requirement. Ground in the standard + corpus + canonical request — do not invent requirements. NEVER name or hint at any other client/site/person/project — speak generically.
+ALWAYS populate ib_expectations (even when READY). Cite the SI 6464 clause when stating a requirement. Ground in the standard + corpus + canonical request — do not invent requirements. NEVER name or hint at any other client/site/person/project — speak generically. NEVER cite the number of past EOCs/projects/records behind a point; if you mention how common something is, use only an approximate percentage (e.g. "~65%").
 
 Return ONLY a JSON array, one object per input row.`;
 
-// compact grounding for one clause
+// compact grounding for one clause. Prevalence is given to the model as an approximate percentage
+// (never raw project/EOC counts), matching the no-count rule in SYSTEM.
 function groundRow(r) {
   const rec = getClause(r.clause);
+  const total = rec?.corpus_count || 0;
+  const pct = (n) => (total ? `~${Math.max(1, Math.min(100, Math.round((Number(n) || 0) / total * 100)))}%` : 'common');
   const ib = (rec?.ib_interaction_patterns || []).slice(0, 4)
-    .map((p) => `(${p.frequency || 1}×, ${p.resolution}) ${p.ib_comment}`);
+    .map((p) => `(${pct(p.frequency || 1)}, ${p.resolution}) ${p.ib_comment}`);
   const acc = (rec?.accepted_reply_patterns || []).slice(0, 3)
-    .map((p) => `(${p.frequency}${p.is_dominant ? ', most common' : ''}) ${p.pattern}`);
+    .map((p) => `(${pct(p.frequency || 1)}${p.is_dominant ? ', most common' : ''}) ${p.pattern}`);
   const std = retrieveStandard(`${r.clause} ${r.requirement || ''}`, 1).map((s) => s.text.slice(0, 500));
   const rule = ruleHint(r.clause, r.requirement); // severity + canonical IB request (bilingual)
   return {
@@ -59,7 +62,6 @@ function groundRow(r) {
     severity: rule?.severity || 'standard',
     canonical_ib_request: rule?.canonical_ib_request || '',
     corpus_accepted: acc, corpus_ib_comments: ib, standard: std[0] || '',
-    observed_in_projects: rec?.corpus_count || 0,
   };
 }
 
@@ -143,7 +145,7 @@ export async function reviewEOC({ type, rows, limit, attachments, onProgress }) 
     const rule = ruleHint(r.clause, r.requirement);
     const critical = !!rule && (rule.severity === 'safety' || rule.severity === 'statutory');
     const inHe = he(r.requirement);
-    const base = { row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, next_itl_col: r.next_itl_col, severity: rule?.severity || 'standard', observed_in_projects: getClause(r.clause)?.corpus_count || 0 };
+    const base = { row: r.row, clause: r.clause, section: r.section, requirement: r.requirement, next_itl_col: r.next_itl_col, severity: rule?.severity || 'standard' };
 
     if (isStructural(r.requirement, r.clause)) { structural++; continue; }                 // note / header / intro
     if (naVerdict(r)) { items.push({ ...base, readiness: 'N/A', ib_expectations: inHe ? 'הסעיף סומן כלא רלוונטי.' : 'Marked not applicable.', reply_assessment: '', suggested_fix: '', client_answer: r.client_answer || '' }); continue; }
@@ -199,9 +201,12 @@ function propagateSection(items) {
     arr.push(it);
   }
   for (const g of groups.values()) {
-    if (g.length < 2) continue;
-    const rep = g.slice().sort((a, b) => (SEV[b.readiness] - SEV[a.readiness]) || ((b.ib_expectations || '').length - (a.ib_expectations || '').length))[0];
-    for (const it of g) { it.readiness = rep.readiness; it.ib_expectations = rep.ib_expectations; it.suggested_fix = rep.suggested_fix; }
+    // Only propagate among rows the reviewer actually flagged — never drag an explicit N/A (the
+    // client marked it not-applicable) up to the group's worst readiness.
+    const flagged = g.filter((it) => it.readiness !== 'N/A');
+    if (flagged.length < 2) continue;
+    const rep = flagged.slice().sort((a, b) => (SEV[b.readiness] - SEV[a.readiness]) || ((b.ib_expectations || '').length - (a.ib_expectations || '').length))[0];
+    for (const it of flagged) { it.readiness = rep.readiness; it.ib_expectations = rep.ib_expectations; it.suggested_fix = rep.suggested_fix; }
   }
 }
 

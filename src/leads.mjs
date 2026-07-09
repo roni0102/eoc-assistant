@@ -22,6 +22,15 @@ const USAGE_PATH = path.join(DATA_DIR, 'usage.json'); // per-email question coun
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json'); // active tokens (survive restarts)
 const DEVICES_PATH = path.join(DATA_DIR, 'devices.json'); // per-device free ungated-ask counts
 
+// Atomic write (temp file + rename) so a crash mid-write can't truncate/corrupt a store, which
+// would otherwise reload as empty on next boot and get overwritten (losing usage caps/sessions).
+function writeJsonAtomic(file, obj) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(obj));
+  fs.renameSync(tmp, file);
+}
+
 const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 export const validEmail = (s) => /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(norm(s));
 export const validPhone = (s) => (norm(s).match(/\d/g) || []).length >= 7 && /^[\d\s+\-().]{7,}$/.test(norm(s));
@@ -43,7 +52,7 @@ const usageByEmail = (() => {
   catch { return new Map(); }
 })();
 function persistUsage() {
-  try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(USAGE_PATH, JSON.stringify(Object.fromEntries(usageByEmail))); } catch {}
+  try { writeJsonAtomic(USAGE_PATH, Object.fromEntries(usageByEmail)); } catch {}
 }
 const emailKey = (token) => String(tokenEmail.get(token) || token).toLowerCase();
 
@@ -53,7 +62,7 @@ export const freeLimit = () => FREE_LIMIT;
 // that, the light email gate is required. Counted per device id (sent by the browser), persisted.
 const FREE_UNGATED = Number(process.env.FREE_UNGATED || 1);
 const freeAsks = (() => { try { return new Map(Object.entries(JSON.parse(fs.readFileSync(DEVICES_PATH, 'utf8')))); } catch { return new Map(); } })();
-function persistDevices() { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(DEVICES_PATH, JSON.stringify(Object.fromEntries(freeAsks))); } catch {} }
+function persistDevices() { try { writeJsonAtomic(DEVICES_PATH, Object.fromEntries(freeAsks)); } catch {} }
 /** Consume one ungated free question for a device. {ok:false} once the device's free quota is spent. */
 export function useFreeAsk(deviceId) {
   const k = String(deviceId || '').slice(0, 64) || 'anon';
@@ -86,8 +95,7 @@ function persistSessions() {
   try {
     const obj = {};
     for (const [tok, id] of sessions) obj[tok] = { id, email: tokenEmail.get(tok) || '' };
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(SESSIONS_PATH, JSON.stringify(obj));
+    writeJsonAtomic(SESSIONS_PATH, obj);
   } catch {}
 }
 

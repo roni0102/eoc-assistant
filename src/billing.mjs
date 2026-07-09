@@ -66,7 +66,31 @@ const ent = (() => {
 const pending = (() => {
   try { return new Map(Object.entries(JSON.parse(fs.readFileSync(PENDING_PATH, 'utf8')))); } catch { return new Map(); }
 })();
-function persistPending() { try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(PENDING_PATH, JSON.stringify(Object.fromEntries(pending))); } catch {} }
+// Atomic write: write a temp file then rename (atomic on the same fs), so a crash mid-write can
+// never truncate/corrupt the real file — which would otherwise load as empty next boot and get
+// overwritten with {}, wiping every paying customer's entitlements.
+function writeJsonAtomic(file, obj) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(obj));
+  fs.renameSync(tmp, file);
+}
+function persistPending() { try { writeJsonAtomic(PENDING_PATH, Object.fromEntries(pending)); } catch (e) { try { console.error('[billing] persistPending failed:', e?.message || e); } catch {} } }
+
+// Replay guard: a Morning payment document is granted AT MOST ONCE, ever. Without this, re-POSTing
+// a real (still-valid) document id to the unauthenticated webhook would claim pending after pending.
+const PROCESSED_PATH = path.join(DATA_DIR, 'processed_docs.json');
+const processedDocs = (() => { try { return new Set(JSON.parse(fs.readFileSync(PROCESSED_PATH, 'utf8'))); } catch { return new Set(); } })();
+export const isDocProcessed = (id) => processedDocs.has(String(id));
+export function markDocProcessed(id) { processedDocs.add(String(id)); try { writeJsonAtomic(PROCESSED_PATH, [...processedDocs]); } catch (e) { try { console.error('[billing] markDocProcessed failed:', e?.message || e); } catch {} } }
+
+// Map a paid (VAT-inclusive) amount back to a product kind, so the grant is driven by what was
+// ACTUALLY paid — not by a fragile email-keyed pending record. Tolerant of ±1 ILS rounding.
+export function kindForAmount(amount) {
+  const a = Math.round(Number(amount) || 0);
+  for (const [kind, price] of Object.entries(PRICE)) if (price && Math.abs(a - Math.round(price)) <= 1) return kind;
+  return '';
+}
 export function addPending(id, { email, kind }) {
   pending.set(String(id), { email: String(email || '').toLowerCase().trim(), kind, ts: Date.now(), done: false });
   persistPending();
@@ -90,7 +114,7 @@ export function findPending({ email, kind } = {}) {
 }
 
 function persist() {
-  try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(ENT_PATH, JSON.stringify(Object.fromEntries(ent))); } catch {}
+  try { writeJsonAtomic(ENT_PATH, Object.fromEntries(ent)); } catch (e) { try { console.error('[billing] persist failed:', e?.message || e); } catch {} }
 }
 const key = (e) => String(e || '').toLowerCase().trim();
 function rec(email) {
@@ -136,7 +160,7 @@ export function grant(email, kind) {
   const r = rec(email);
   if (kind === 'review') r.reviews = (r.reviews || 0) + 1;
   else if (kind === 'consult') r.consults = (r.consults || 0) + 1;
-  else if (kind === 'subscription') r.subUntil = Date.now() + MONTH_MS;
+  else if (kind === 'subscription') r.subUntil = Math.max(r.subUntil || 0, Date.now()) + MONTH_MS; // extend, don't discard remaining days
   else if (kind === 'questions') r.questionCredits = (r.questionCredits || 0) + QUESTIONS_PER_PACK;
   else return false;
   persist();

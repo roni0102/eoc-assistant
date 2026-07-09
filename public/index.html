@@ -575,22 +575,23 @@ const heMost = (s) => { const t = String(s || ''); return (t.match(/[֐-׿]/g) |
 const esc = (s) => (s||'').replace(/[&<>]/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function rtlAttr(s){ return isHe(s) ? ' class="body rtl"' : ' class="body"'; }
 
-// Show prevalence as an approximate percentage of comparable cases (never raw project/EOC counts).
-function freqTag(n, total, suffix){
-  if(total && total>0){ const pct=Math.max(1,Math.min(100,Math.round(n/total*100))); return `<span class="freq">~${pct}%${suffix?' '+suffix:''}</span>`; }
+// Prevalence comes pre-computed from the server as an approximate percentage (p.pct) — the raw
+// project/EOC counts are never sent to the client.
+function freqTag(pct, suffix){
+  if(pct!=null && pct!==''){ return `<span class="freq">~${pct}%${suffix?' '+suffix:''}</span>`; }
   return `<span class="freq">common</span>`;
 }
 
-function acceptedBlock(p, total){
+function acceptedBlock(p){
   return `<div class="pat${p.is_dominant?' dom':''}">
-    <div class="patmeta">${p.is_dominant?'<b>Most common accepted approach</b> · ':''}${freqTag(p.frequency, total, 'alignment')}</div>
+    <div class="patmeta">${p.is_dominant?'<b>Most common accepted approach</b> · ':''}${freqTag(p.pct, 'alignment')}</div>
     <div class="cmt"${isHe(p.pattern)?' dir="rtl"':''}>${esc(p.pattern)}</div>
   </div>`;
 }
-function ibBlock(r, total){
+function ibBlock(r){
   let cls = ''; if(/condition/.test(r.outcome)) cls=' cond'; if(/comment/.test(r.outcome)) cls=' risk';
   return `<div class="ib">
-    <div class="out${cls}">IB ${esc(r.outcome)} · ${freqTag(r.frequency, total)}</div>
+    <div class="out${cls}">IB ${esc(r.outcome)} · ${freqTag(r.pct)}</div>
     <div class="cmt"${isHe(r.ib_comment)?' dir="rtl"':''}>${esc(r.ib_comment)}</div>
     ${r.closing_note?`<div class="close"${isHe(r.closing_note)?' dir="rtl"':''}>Closing approach: ${esc(r.closing_note)}</div>`:''}
   </div>`;
@@ -605,10 +606,10 @@ function card(c){
     ${c.requirement?`<div class="doc"${isHe(c.requirement)?' dir="rtl"':''}>${esc(c.requirement)}</div>`:`<div class="doc">SI 6464 §${esc(c.clause)}</div>`}
 
     <div class="block"><h4>How this item is actually answered (from the corpus)</h4>
-      ${acc.length?acc.map(p=>acceptedBlock(p, c.corpus_count)).join('')
+      ${acc.length?acc.map(acceptedBlock).join('')
         :`<div class="body" style="color:var(--muted)">No anonymized accepted-reply pattern captured for this item yet.</div>`}</div>
 
-    ${ib.length?`<div class="block"><h4>IB comments seen on this item & how it closes</h4>${ib.map(r=>ibBlock(r, c.corpus_count)).join('')}</div>`:''}
+    ${ib.length?`<div class="block"><h4>IB comments seen on this item & how it closes</h4>${ib.map(ibBlock).join('')}</div>`:''}
 
     ${pit.length?`<div class="block"><h4>Common pitfalls</h4><ul class="pit">${pit.map(p=>`<li${isHe(p)?' dir="rtl"':''}>${esc(p)}</li>`).join('')}</ul></div>`:''}
 

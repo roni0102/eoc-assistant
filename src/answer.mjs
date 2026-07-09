@@ -19,21 +19,27 @@ const RESOLUTION_LABEL = {
   open: 'left open pending further input',
 };
 
+// Prevalence as an approximate percentage of comparable cases — we ship ONLY this, never the raw
+// project/EOC counts, so nothing in the API response reveals the size of the underlying record set.
+const pctOf = (n, total) => (total ? Math.max(1, Math.min(100, Math.round((Number(n) || 0) / total * 100))) : null);
+
 // Build the "how the IB typically responds" summaries from anonymized patterns.
 function ibResponses(item) {
+  const total = item.corpus_count || 0;
   return (item.ib_interaction_patterns || []).map((p) => ({
     outcome: RESOLUTION_LABEL[p.resolution] || p.resolution,
     ib_comment: p.ib_comment,
-    frequency: p.frequency || 1,
+    pct: pctOf(p.frequency || 1, total),
     closing_note: p.closing_note || null,
   }));
 }
 
 // The product: how this item was actually answered across the corpus.
 function acceptedPatterns(item) {
+  const total = item.corpus_count || 0;
   return (item.accepted_reply_patterns || []).map((p) => ({
     pattern: p.pattern,
-    frequency: p.frequency || 1,
+    pct: pctOf(p.frequency || 1, total),
     is_dominant: !!p.is_dominant,
   }));
 }
@@ -63,8 +69,7 @@ export function composeAnswer({ query, retrieved }) {
     document: it.document || null,
     requirement: it.requirement_en || it.requirement_he || null,
     standard_reply: it.standard_reply || null,        // scaffold / context only
-    // ===== the product: learned from the corpus of past filled EOCs =====
-    corpus_count: it.corpus_count || 0,
+    // ===== the product: learned from the corpus of past filled EOCs (prevalence as % only) =====
     accepted_reply_patterns: acceptedPatterns(it),
     ib_responses: ibResponses(it),
     common_pitfalls: it.common_pitfalls || [],

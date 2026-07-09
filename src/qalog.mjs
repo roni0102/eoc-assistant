@@ -102,7 +102,10 @@ function readAll() {
 // The text shown publicly: the de-identified rephrasing when present, else the scrubbed question
 // (legacy/seed rows). NEW rows are only public when they have a clean publicQ, so raw client
 // wording is never surfaced.
-const shownQ = (e) => e.publicQ || e.q;
+// If a row carries a publicQ field (any row logged via the rephrasing path), the public text is
+// ONLY that rephrasing — never the raw scrubbed question, even if publicQ is '' (LLM said SKIP:
+// not safely generalizable). Only truly-legacy rows (no publicQ field) fall back to the scrubbed q.
+const shownQ = (e) => ('publicQ' in e ? (e.publicQ || '') : e.q);
 
 /** recent(limit): most-recent distinct PUBLIC questions, newest first. */
 export function recent(limit = 20) {
@@ -112,6 +115,7 @@ export function recent(limit = 20) {
     const e = all[i];
     if (!isPublic(e)) continue;
     const disp = shownQ(e);
+    if (!disp) continue;                       // approved-but-un-generalizable row → show nothing
     const key = disp.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -131,7 +135,7 @@ export function search(query, limit = 10) {
     return { e, s };
   }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
   const seen = new Set(), out = [];
-  for (const { e } of scored) { const disp = shownQ(e); const k = disp.toLowerCase(); if (seen.has(k)) continue; seen.add(k); out.push({ id: e.id, ts: e.ts, q: disp, a: e.a, clauses: e.clauses, chapter: e.chapter || '' }); if (out.length >= limit) break; }
+  for (const { e } of scored) { const disp = shownQ(e); if (!disp) continue; const k = disp.toLowerCase(); if (seen.has(k)) continue; seen.add(k); out.push({ id: e.id, ts: e.ts, q: disp, a: e.a, clauses: e.clauses, chapter: e.chapter || '' }); if (out.length >= limit) break; }
   return out;
 }
 
@@ -155,7 +159,7 @@ export function setApproval(id, approved) {
 export function forNewsletter({ sinceISO, limit = 100 } = {}) {
   return readAll().filter(isPublic)
     .filter((e) => !sinceISO || e.ts >= sinceISO)
-    .map((e) => ({ ts: e.ts, q: e.q, chapter: e.chapter || '', lang: e.lang || '', clauses: e.clauses || [] }))
+    .map((e) => ({ ts: e.ts, q: shownQ(e), chapter: e.chapter || '', lang: e.lang || '', clauses: e.clauses || [] })) // public rephrasing only — never raw e.q
     .slice(-limit).reverse();
 }
 

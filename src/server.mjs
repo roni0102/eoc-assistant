@@ -80,14 +80,21 @@ function cacheDownload(buffer, name) {
 setInterval(() => { const now = Date.now(); for (const [k, v] of downloads) if (v.exp < now) downloads.delete(k); }, 60_000).unref?.();
 
 // --- minimal in-memory rate limit (per IP, sliding window) ----------------------
-const WINDOW_MS = 60_000, MAX = 30;
+const WINDOW_MS = 60_000, MAX = 30, HITS_CAP = 20_000;
 const hits = new Map();
+// Client IP: Render fronts every request with Cloudflare, which sets `cf-connecting-ip` to the real
+// client and overwrites any client-supplied value — so it can't be spoofed to bypass the limit
+// (unlike the leftmost X-Forwarded-For that `trust proxy: true` exposes via req.ip). Fall back to
+// req.ip for local/dev.
+const clientIp = (req) => req.headers['cf-connecting-ip'] || req.headers['true-client-ip'] || req.ip || 'unknown';
 function rateLimit(req, res, next) {
-  const ip = req.ip || 'unknown';
+  const ip = clientIp(req);
   const now = Date.now();
   const arr = (hits.get(ip) || []).filter((t) => now - t < WINDOW_MS);
   if (arr.length >= MAX) return res.status(429).json({ error: 'Too many requests — please slow down.' });
   arr.push(now); hits.set(ip, arr);
+  // Bound memory: if the map grows huge (spoofed/rotating IPs, or just scale), drop stale entries.
+  if (hits.size > HITS_CAP) for (const [k, v] of hits) { if (!v.length || now - v[v.length - 1] >= WINDOW_MS) hits.delete(k); }
   next();
 }
 
@@ -282,22 +289,33 @@ app.post('/pay/callback', rateLimit, async (req, res) => {
     // is tied to the email ON that document, so a forged webhook can't redirect credits to anyone.
     const docId = b.id || b.document_id || b.documentId;
     if (!docId) { console.warn('[pay] webhook: no document id in payload'); return; }
-    let doc;
-    try { doc = await morning.getDocument(docId); }
-    catch (e) { console.warn(`[pay] webhook: document ${docId} fetch failed (unverified), ignoring: ${e?.message || e}`); return; }
+    // Replay guard: each Morning document grants at most once, ever. Stops re-POSTing a real
+    // (still-valid) invoice id to this unauthenticated endpoint from claiming pending after pending.
+    if (billing.isDocProcessed(docId)) { console.log(`[pay] webhook: doc ${docId} already processed, ignoring replay`); return; }
+    // Authenticity: re-fetch the document from Morning (only our API key can read our docs). Retry a
+    // few times so a TRANSIENT failure doesn't permanently lose a paid grant (we already 200'd, so
+    // Morning won't retry us). If it never verifies, we leave the pending unclaimed for recovery.
+    let doc = null;
+    for (let attempt = 0; attempt < 3 && !doc; attempt++) {
+      try { doc = await morning.getDocument(docId); }
+      catch (e) { console.warn(`[pay] webhook: getDocument ${docId} attempt ${attempt + 1} failed: ${e?.message || e}`); await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); }
+    }
+    if (!doc) { console.error(`[pay] webhook: doc ${docId} could not be verified after retries — NOT granting (pending left for reconciliation)`); return; }
     // A type-320 (tax invoice + receipt) with status 1 (active, not cancelled) = payment received.
-    if (!doc || String(doc.type) !== '320' || Number(doc.status) !== 1) {
-      console.log(`[pay] webhook: doc ${docId} not a valid paid 320 (type=${doc?.type} status=${doc?.status}), ignoring`); return;
+    if (String(doc.type) !== '320' || Number(doc.status) !== 1) {
+      console.log(`[pay] webhook: doc ${docId} not a valid paid 320 (type=${doc.type} status=${doc.status}), ignoring`); return;
     }
     const email = (doc.client?.emails?.[0] || '').toLowerCase();
     if (!email) { console.warn(`[pay] webhook: doc ${doc.number} has no client email`); return; }
-    // Match the buyer's open purchase and CLAIM it before granting, so a duplicate/retried webhook
-    // can't double-grant (takePending returns null once claimed).
-    const f = billing.findPending({ email });
-    const rec = f ? billing.takePending(f.id) : null;
-    if (!rec) { console.warn(`[pay] webhook: no unclaimed pending for ${email} (already granted or unknown)`); return; }
-    billing.grant(rec.email, rec.kind);
-    console.log(`[pay] ✓ payment confirmed (doc ${doc.number}, ₪${doc.amount}) → granted ${rec.kind} to ${rec.email}`);
+    // Grant is driven by what was ACTUALLY PAID (the document amount → product kind), NOT by the
+    // fragile email-keyed pending (which a later checkout overwrites). This prevents paying ₪6 and
+    // being granted the ₪673 consult (or vice-versa).
+    const kind = billing.kindForAmount(doc.amount);
+    if (!kind) { console.error(`[pay] webhook: doc ${doc.number} amount ₪${doc.amount} matches no product price — NOT granting`); return; }
+    billing.markDocProcessed(docId);              // consume BEFORE grant so a concurrent replay can't double-grant
+    billing.grant(email, kind);
+    const f = billing.findPending({ email, kind }); if (f) billing.takePending(f.id); // clean up the matching pending
+    console.log(`[pay] ✓ payment confirmed (doc ${doc.number}, ₪${doc.amount}) → granted ${kind} to ${email}`);
   } catch (e) { console.error('[pay] webhook error:', e?.message || e); }
 });
 
@@ -436,7 +454,7 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
   } else if (billed) {
     const ent = billing.entitlements(revEmail);
     subCovered = !!ent.subActive; // membership includes the full EOC review
-    if (!subCovered && ent.reviews <= 0) return res.status(402).json({ pay: 'review', error: 'A one-time EOC review (₪87) or a monthly membership (₪97) is required.' });
+    if (!subCovered && ent.reviews <= 0) { const pr = billing.pricing(); return res.status(402).json({ pay: 'review', error: `A one-time EOC review (₪${pr.incl.review}) or a monthly membership (₪${pr.incl.subscription}) is required.` }); }
   } else {
     // Pre-launch TESTING mode: while NOTHING is configured yet (no Grow billing, no ADMIN_KEY, no
     // PREMIUM_LICENSE_KEYS), the review is OPEN so the owner can test it. The paywall switches on

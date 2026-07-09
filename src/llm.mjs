@@ -39,15 +39,14 @@ ABSOLUTE RULES:
 "Reference guidance only — not a formal ITL determination. Final approval is subject to ITL review of the actual submission."`;
 
 function renderContext(cards) {
-  // Prevalence is expressed to the model ONLY as an approximate percentage of comparable cases —
-  // never raw project/EOC counts — so its prose can't reveal or hint at the underlying record set.
-  const pct = (n, total) => (total ? `~${Math.max(1, Math.min(100, Math.round((n / total) * 100)))}%` : 'common');
+  // Prevalence is expressed to the model ONLY as an approximate percentage (precomputed in
+  // answer.mjs) — never raw project/EOC counts — so its prose can't reveal the underlying record set.
+  const pctStr = (p) => (p.pct != null ? `~${p.pct}%` : 'common');
   return cards.map((c) => {
-    const total = c.corpus_count || 0;
     const acc = (c.accepted_reply_patterns || []).slice(0, 5)
-      .map((p) => `   - (${pct(p.frequency, total)} alignment${p.is_dominant ? ', most common' : ''}) ${p.pattern}`).join('\n');
+      .map((p) => `   - (${pctStr(p)} alignment${p.is_dominant ? ', most common' : ''}) ${p.pattern}`).join('\n');
     const ib = (c.ib_responses || c.ib_interaction_patterns || []).slice(0, 6)
-      .map((p) => `   - (${pct(p.frequency || 1, total)}, ${p.resolution || p.outcome || ''}) ${p.ib_comment}`).join('\n');
+      .map((p) => `   - (${pctStr(p)}, ${p.resolution || p.outcome || ''}) ${p.ib_comment}`).join('\n');
     const pit = (c.common_pitfalls || []).slice(0, 4).map((p) => `   - ${p}`).join('\n');
     const appl = (c.appliance_breakdown || []).slice(0, 6)
       .map((a) => a.appliance).join(', ');
