@@ -133,6 +133,22 @@ export async function sendBugEmail({ bug, file }) {
 }
 
 /**
+ * sendVerificationCode({ to, code }) -> boolean. Emails a 6-digit code to confirm the address
+ * before paid access. Bilingual. Never throws.
+ */
+export async function sendVerificationCode({ to, code }) {
+  if (!mailAvailable() || !to) return false;
+  const text =
+    `קוד האימות שלך ל-EOC Assistant הוא: ${code}\n` +
+    `הקוד תקף ל-10 דקות. אם לא ביקשת אותו, אפשר להתעלם מהודעה זו.\n\n` +
+    `— — —\n\n` +
+    `Your EOC Assistant verification code is: ${code}\n` +
+    `It is valid for 10 minutes. If you didn't request it, you can ignore this email.\n\n— EOC Assistant`;
+  try { await deliver({ to, subject: `EOC Assistant — קוד אימות / verification code: ${code}`, text }); return true; }
+  catch (e) { try { console.error('[mail] verification code failed:', e?.message || e); } catch {} return false; }
+}
+
+/**
  * sendRenewalReminder({ to, daysLeft, renewUrl }) -> boolean. Reminds a member their monthly
  * pass is about to expire, with a one-click renew link. Bilingual (HE primary). Never throws.
  */

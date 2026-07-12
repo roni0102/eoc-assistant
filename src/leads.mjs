@@ -40,6 +40,37 @@ export const validCompany = (s) => norm(s).length >= 2;
 // restarts/sleep-wake (otherwise returning visitors get re-gated constantly on the free plan).
 const sessions = new Map();
 
+// Email verification. PAID benefits (subscription, review/consult/question credits) require a
+// VERIFIED token. A token is verified only after its owner enters a 6-digit code we emailed to
+// that token's email — so claiming someone else's email (to hijack their paid entitlements) fails,
+// because the code is delivered to the real owner, not the claimant. Free-tier asks never need it.
+const verifiedTokens = new Set();               // tokens that completed the code round-trip
+const verifyCodes = new Map();                  // email -> { code, exp, attempts }
+const VERIFY_TTL = 10 * 60 * 1000;              // codes valid 10 minutes
+export const isVerified = (token) => verifiedTokens.has(token);
+/** Begin verification for a token: mint a code for its email. Returns { ok, email, code }. */
+export function startVerification(token) {
+  const email = tokenEmail.get(token);
+  if (!email) return { ok: false, error: 'Your session has no email — please re-enter your details.' };
+  const code = String(crypto.randomInt(100000, 1000000)); // always 6 digits
+  verifyCodes.set(email, { code, exp: Date.now() + VERIFY_TTL, attempts: 0 });
+  return { ok: true, email, code };
+}
+/** Confirm a code for a token's email. On success, marks THIS token verified (and persists it). */
+export function confirmVerification(token, code) {
+  const email = tokenEmail.get(token);
+  if (!email) return { ok: false, error: 'Your session has no email.' };
+  const rec = verifyCodes.get(email);
+  if (!rec || Date.now() > rec.exp) return { ok: false, error: 'Code expired — request a new one.' };
+  if (rec.attempts >= 5) { verifyCodes.delete(email); return { ok: false, error: 'Too many attempts — request a new code.' }; }
+  rec.attempts++;
+  if (String(code || '').trim() !== rec.code) return { ok: false, error: 'Incorrect code — please try again.' };
+  verifyCodes.delete(email);
+  verifiedTokens.add(token);
+  persistSessions();
+  return { ok: true };
+}
+
 // Free-plan question cap (to control token spend). Override with FREE_QUERY_LIMIT.
 // Airtight: keyed by EMAIL (not the session token) and persisted to disk, so re-submitting
 // the gate with the same email does NOT reset the quota, and it survives instance restarts.
@@ -87,14 +118,14 @@ export function useQuery(token, extra = 0) {
   try {
     const obj = JSON.parse(fs.readFileSync(SESSIONS_PATH, 'utf8'));
     for (const [tok, v] of Object.entries(obj)) {
-      if (v && v.id) { sessions.set(tok, v.id); if (v.email) tokenEmail.set(tok, v.email); }
+      if (v && v.id) { sessions.set(tok, v.id); if (v.email) tokenEmail.set(tok, v.email); if (v.verified) verifiedTokens.add(tok); }
     }
   } catch {}
 })();
 function persistSessions() {
   try {
     const obj = {};
-    for (const [tok, id] of sessions) obj[tok] = { id, email: tokenEmail.get(tok) || '' };
+    for (const [tok, id] of sessions) obj[tok] = { id, email: tokenEmail.get(tok) || '', verified: verifiedTokens.has(tok) };
     writeJsonAtomic(SESSIONS_PATH, obj);
   } catch {}
 }

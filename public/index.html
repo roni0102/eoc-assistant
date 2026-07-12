@@ -544,6 +544,20 @@
   </div>
 </div>
 
+<div id="verifyModal" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-h">אימות אימייל · Verify your email</div>
+    <div id="vyMsg" class="co-summary" style="margin-bottom:10px"></div>
+    <input id="vyCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code · קוד בן 6 ספרות" style="width:100%;margin-bottom:10px;letter-spacing:3px;text-align:center" />
+    <div id="vyNote" class="expert-note" style="margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="go" id="vyConfirm">אישור · Verify</button>
+      <button class="ghost" id="vyResend">שליחה מחדש · Resend</button>
+      <button class="ghost" id="vyCancel">ביטול · Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = (s) => document.querySelector(s);
 // resilient storage (sandboxed iframes / private mode can block localStorage)
@@ -1013,9 +1027,44 @@ $('#coContinue').onclick=async ()=>{
     const r=await fetch('/checkout',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({kind:coKind, policy:true, customer})});
     const d=await r.json().catch(()=>({}));
     if(r.status===401 && d.gate){ closeCheckout(); openGate(); return; }
+    if(r.status===403 && d.verify){ openVerify(()=>$('#coContinue').click()); return; } // verify email, then retry
     if(r.ok && d.url){ window.location.href=d.url; return; } // → Morning hosted payment page
     fail(d.error||t.eGeneric);
   }catch(e){ fail(t.eNet); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+};
+
+// ---- email verification (required before paid actions) ----
+let _verifyOnOk = null;
+async function openVerify(onOk){
+  _verifyOnOk = onOk || null;
+  $('#vyNote').textContent=''; $('#vyNote').className='expert-note'; $('#vyCode').value='';
+  $('#vyMsg').textContent='Sending a code… · שולח קוד…';
+  $('#verifyModal').hidden=false;
+  const ok=await sendVerifyCode(); if(ok) setTimeout(()=>$('#vyCode').focus(),50);
+}
+function closeVerify(){ $('#verifyModal').hidden=true; _verifyOnOk=null; }
+async function sendVerifyCode(){
+  try{
+    const r=await fetch('/verify/start',{method:'POST',headers:{'x-session':session}});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok && d.sent){ $('#vyMsg').innerHTML='שלחנו קוד בן 6 ספרות אל <b>'+esc(d.email||'')+'</b> · We emailed a 6-digit code to it. Enter it below.'; return true; }
+    $('#vyMsg').textContent=''; $('#vyNote').className='expert-note err'; $('#vyNote').textContent=d.error||'Could not send the code.'; return false;
+  }catch(e){ $('#vyNote').className='expert-note err'; $('#vyNote').textContent='Network error — please try again.'; return false; }
+}
+$('#vyResend').onclick=()=>{ $('#vyNote').textContent=''; sendVerifyCode(); };
+$('#vyCancel').onclick=closeVerify;
+$('#verifyModal').addEventListener('click',e=>{ if(e.target.id==='verifyModal') closeVerify(); });
+$('#vyConfirm').onclick=async ()=>{
+  const code=$('#vyCode').value.trim();
+  if(!/^\d{6}$/.test(code)){ $('#vyNote').className='expert-note err'; $('#vyNote').textContent='Enter the 6-digit code · הזינו קוד בן 6 ספרות.'; return; }
+  const btn=$('#vyConfirm'); const old=btn.textContent; btn.disabled=true; btn.textContent='…';
+  try{
+    const r=await fetch('/verify/confirm',{method:'POST',headers:{'Content-Type':'application/json','x-session':session},body:JSON.stringify({code})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok && d.ok){ if(window.ME) ME.verified=true; const cb=_verifyOnOk; closeVerify(); if(cb) cb(); return; }
+    $('#vyNote').className='expert-note err'; $('#vyNote').textContent=d.error||'Incorrect code.';
+  }catch(e){ $('#vyNote').className='expert-note err'; $('#vyNote').textContent='Network error — please try again.'; }
   finally{ btn.disabled=false; btn.textContent=old; }
 };
 function toast(msg, kind){
@@ -1145,6 +1194,7 @@ $('#reviewBtn').onclick=async ()=>{
     if(!res.ok){
       const data=await res.json().catch(()=>({}));
       if(res.status===401 && data.gate){ openGate(); return; }
+      if(res.status===403 && data.verify){ out.innerHTML=`<div class="rev">Please verify your email to use your paid review.</div>`; openVerify(()=>$('#reviewBtn')?.click()); return; }
       if(res.status===402 && data.pay==='review'){ out.innerHTML=`<div class="rev"><b>A full EOC review requires a paid plan.</b> See your options in the popup.</div>`; openUpgrade('review'); return; }
       out.innerHTML=`<div class="rev notfound">${esc(data.error||'Review failed.')}</div>`; return;
     }

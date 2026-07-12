@@ -17,7 +17,7 @@ import { composeAnswer } from './answer.mjs';
 import { answerWithLLM, translate, LANG_NAMES, llmAvailable, MODEL, genericizeQuestion } from './llm.mjs';
 import { readEOC, writeEOC } from './eoc.mjs';
 import { reviewEOC } from './review.mjs';
-import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail, sendRenewalReminder } from './mailer.mjs';
+import { mailAvailable, sendReviewEmail, sendExpertEmail, sendBugEmail, sendRenewalReminder, sendVerificationCode } from './mailer.mjs';
 import * as qalog from './qalog.mjs';
 import * as leads from './leads.mjs';
 import * as billing from './billing.mjs';
@@ -130,6 +130,25 @@ app.get(['/purchasing-policy.pdf', '/terms'], (_req, res) => {
 // Validate a stored session token on page load (so the gate shows up front, not mid-query).
 app.get('/session', requireGate, (_req, res) => res.json({ ok: true }));
 
+// Email verification — required before PAID access, so a session can't spend entitlements bought
+// under an email it doesn't control. A 6-digit code is emailed to the SESSION's email; entering it
+// marks THIS token verified. The code value is never returned in the API.
+const maskEmail = (e) => String(e || '').replace(/^(.).*(.@.*)$/, '$1***$2');
+app.post('/verify/start', rateLimit, requireGate, async (req, res) => {
+  if (!mailAvailable()) return res.status(503).json({ error: 'Email is not configured — verification is unavailable.' });
+  const r = leads.startVerification(req.sessionToken);
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  const sent = await sendVerificationCode({ to: r.email, code: r.code }).catch(() => false);
+  if (!sent) return res.status(502).json({ error: 'Could not send the code — please try again.' });
+  console.log(`[verify] code sent to ${maskEmail(r.email)}`);
+  res.json({ sent: true, email: maskEmail(r.email) });
+});
+app.post('/verify/confirm', rateLimit, requireGate, (req, res) => {
+  const r = leads.confirmVerification(req.sessionToken, req.body?.code);
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, verified: true });
+});
+
 // Lead-capture entry gate: store the visitor's contact details, unlock the session.
 app.post('/lead', rateLimit, (req, res) => {
   const { email, phone, company, light } = req.body || {};
@@ -195,7 +214,7 @@ app.get('/me', (req, res) => {
   const gated = leads.validToken(token);
   const email = gated ? leads.emailForToken(token) : '';
   const ent = email ? billing.entitlements(email) : {};
-  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, email: email || '', gated, freeLimit: leads.freeLimit() });
+  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, email: email || '', gated, verified: gated && leads.isVerified(token), freeLimit: leads.freeLimit() });
 });
 
 // Admin/owner unlock: a correct ADMIN_KEY (env only) grants this email unlimited questions +
@@ -237,6 +256,9 @@ app.post('/checkout', rateLimit, requireGate, async (req, res) => {
   const kind = String(req.body?.kind || '').trim();
   if (!['review', 'consult', 'subscription', 'questions'].includes(kind)) return res.status(400).json({ error: 'Unknown product.' });
   if (req.body?.policy !== true) return res.status(400).json({ error: 'Please accept the Purchasing Policy & Terms to continue.' });
+  // The buyer must have VERIFIED their email — the entitlement is granted to (and later used from)
+  // this session's email, so we require proof of control before taking money for it.
+  if (!leads.isVerified(req.sessionToken)) return res.status(403).json({ verify: true, error: 'Please verify your email before paying.' });
   // Customer details collected before payment (Israeli consumer-protection requirement).
   const cu = req.body?.customer || {};
   const customer = {
@@ -245,7 +267,9 @@ app.post('/checkout', rateLimit, requireGate, async (req, res) => {
     phone: String(cu.phone || '').replace(/[^\d]/g, '').slice(0, 15),
     country: String(cu.country || '').slice(0, 40).trim(),
     company: String(cu.company || '').slice(0, 80).trim(),
-    email: String(cu.email || '').slice(0, 160).trim() || leads.emailForToken(req.sessionToken),
+    // Force the payment/invoice/grant email to the VERIFIED session email, so what's bought can
+    // only be used by this verified session (a typed-in different address can't redirect the grant).
+    email: leads.emailForToken(req.sessionToken) || String(cu.email || '').slice(0, 160).trim(),
   };
   if (!customer.firstName || !customer.lastName) return res.status(400).json({ error: 'Please enter your first and last name.' });
   if (customer.phone.length < 7) return res.status(400).json({ error: 'Please enter a valid phone number.' });
@@ -325,7 +349,9 @@ app.post('/pay/callback', rateLimit, async (req, res) => {
 app.post('/expert', rateLimit, requireGate, (req, res) => {
   const email = leads.emailForToken(req.sessionToken);
   const billed = billing.billingAvailable();
-  if (billed && billing.entitlements(email).consults <= 0) {
+  // A consult credit is only honored for a verified session (else it's spoofable via someone else's email).
+  const consults = leads.isVerified(req.sessionToken) ? billing.entitlements(email).consults : 0;
+  if (billed && consults <= 0) {
     return res.status(402).json({ pay: 'consult', error: 'A paid 30-minute consultation is required to book a meeting.' });
   }
   const r = leads.addExpertRequest({
@@ -353,9 +379,10 @@ app.post('/ask', rateLimit, uploadMedia.array('files', 5), async (req, res) => {
   if (gated) {
     req.sessionToken = token;
     askEmail = leads.emailForToken(token);
-    subscribed = billing.hasSub(askEmail) || billing.isAdmin(askEmail); // admin = unlimited
+    const paidOk = leads.isVerified(token); // paid perks require a verified email
+    subscribed = paidOk && (billing.hasSub(askEmail) || billing.isAdmin(askEmail)); // admin = unlimited
     if (!subscribed) {
-      quota = leads.useQuery(token, billing.extraQuestions(askEmail));
+      quota = leads.useQuery(token, paidOk ? billing.extraQuestions(askEmail) : 0);
       if (!quota.ok) {
         const on = billing.billingAvailable();
         return res.status(429).json({
@@ -447,14 +474,18 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
   let devMode = false, subCovered = false;
   // Admin/owner bypass: the admin key may be supplied in the license field; once valid this email
   // is flagged admin (persisted) and runs reviews free.
-  if (billing.adminKeyValid(req.body?.license)) billing.grantAdmin(revEmail);
-  const adminUser = billing.isAdmin(revEmail);
+  const providedAdminKey = billing.adminKeyValid(req.body?.license);
+  if (providedAdminKey) billing.grantAdmin(revEmail);
+  const verified = leads.isVerified(req.sessionToken); // paid/admin perks require a verified email
+  const adminUser = providedAdminKey || (verified && billing.isAdmin(revEmail));
   if (adminUser) {
     subCovered = true; // admin runs reviews free, no credit consumed
   } else if (billed) {
     const ent = billing.entitlements(revEmail);
-    subCovered = !!ent.subActive; // membership includes the full EOC review
-    if (!subCovered && ent.reviews <= 0) { const pr = billing.pricing(); return res.status(402).json({ pay: 'review', error: `A one-time EOC review (₪${pr.incl.review}) or a monthly membership (₪${pr.incl.subscription}) is required.` }); }
+    // Owns a paid entitlement but hasn't verified this session's email → ask to verify, not pay.
+    if (!verified && (ent.subActive || ent.reviews > 0)) return res.status(403).json({ verify: true, error: 'Please verify your email to use your paid review.' });
+    subCovered = verified && !!ent.subActive; // membership includes the full EOC review
+    if (!subCovered && (!verified || ent.reviews <= 0)) { const pr = billing.pricing(); return res.status(402).json({ pay: 'review', error: `A one-time EOC review (₪${pr.incl.review}) or a monthly membership (₪${pr.incl.subscription}) is required.` }); }
   } else {
     // Pre-launch TESTING mode: while NOTHING is configured yet (no Grow billing, no ADMIN_KEY, no
     // PREMIUM_LICENSE_KEYS), the review is OPEN so the owner can test it. The paywall switches on
