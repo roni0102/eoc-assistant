@@ -87,6 +87,8 @@ const hits = new Map();
 // (unlike the leftmost X-Forwarded-For that `trust proxy: true` exposes via req.ip). Fall back to
 // req.ip for local/dev.
 const clientIp = (req) => req.headers['cf-connecting-ip'] || req.headers['true-client-ip'] || req.ip || 'unknown';
+// Constant-time secret comparison (defense-in-depth against timing attacks on admin keys).
+const safeEqual = (a, b) => { a = String(a ?? ''); b = String(b ?? ''); if (a.length !== b.length || !a) return false; try { return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b)); } catch { return false; } };
 function rateLimit(req, res, next) {
   const ip = clientIp(req);
   const now = Date.now();
@@ -162,7 +164,7 @@ app.post('/lead', rateLimit, (req, res) => {
 app.get('/leads/export', (req, res) => {
   const adminKey = process.env.LEADS_ADMIN_KEY;
   if (!adminKey) return res.status(403).send('Leads export disabled — set LEADS_ADMIN_KEY to enable.');
-  if ((req.get('x-admin-key') || req.query.key) !== adminKey) return res.status(403).send('Forbidden.');
+  if (!safeEqual(req.get('x-admin-key') || req.query.key, adminKey)) return res.status(403).send('Forbidden.'); // prefer the x-admin-key HEADER (a ?key= is logged by proxies)
   const csv = leads.toCSV(leads.allLeads());
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="eoc-leads.csv"');
@@ -392,8 +394,10 @@ app.post('/ask', rateLimit, uploadMedia.array('files', 5), async (req, res) => {
       }
     }
   } else {
-    // Brand-new visitor: one free ungated question per device, then the light email gate.
-    const fa = leads.useFreeAsk(req.get('x-device'));
+    // Brand-new visitor: one free ungated question, then the light email gate. Keyed by the
+    // spoof-proof client IP (cf-connecting-ip) — NOT the client-supplied x-device header, which a
+    // script could rotate for unlimited free LLM answers.
+    const fa = leads.useFreeAsk(clientIp(req));
     if (!fa.ok) return res.status(401).json({ gate: 'light', error: 'Add your email to keep asking — it stays free.' });
     introFree = true;
   }
@@ -462,7 +466,9 @@ app.post('/ask', rateLimit, uploadMedia.array('files', 5), async (req, res) => {
 // --- Premium: full-EOC review (Deliverable: the eoc-fill engine, server-side) ----------
 // Upload a filled EOC -> ITL-style line-by-line review. The file is processed in memory
 // only; it is never persisted and never added to the public knowledge base.
-app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: 'supporting', maxCount: 5 }]), requireGate, async (req, res) => {
+// rateLimit + requireGate run BEFORE multer so unauthenticated/abusive requests are rejected
+// before up to 6×20MB of upload is buffered into memory (the session token comes via x-session).
+app.post('/review', rateLimit, requireGate, uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: 'supporting', maxCount: 5 }]), async (req, res) => {
   const t0 = Date.now();
   if (!llmAvailable()) return res.status(503).json({ error: 'Premium review needs the LLM — set ANTHROPIC_API_KEY.' });
   // Paid review: once billing is live, access requires EITHER an active membership (which
@@ -471,7 +477,7 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
   // billing is connected, use the license-key gate.
   const revEmail = leads.emailForToken(req.sessionToken);
   const billed = billing.billingAvailable();
-  let devMode = false, subCovered = false;
+  let devMode = false, subCovered = false, creditReserved = false;
   // Admin/owner bypass: the admin key may be supplied in the license field; once valid this email
   // is flagged admin (persisted) and runs reviews free.
   const providedAdminKey = billing.adminKeyValid(req.body?.license);
@@ -485,7 +491,13 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
     // Owns a paid entitlement but hasn't verified this session's email → ask to verify, not pay.
     if (!verified && (ent.subActive || ent.reviews > 0)) return res.status(403).json({ verify: true, error: 'Please verify your email to use your paid review.' });
     subCovered = verified && !!ent.subActive; // membership includes the full EOC review
-    if (!subCovered && (!verified || ent.reviews <= 0)) { const pr = billing.pricing(); return res.status(402).json({ pay: 'review', error: `A one-time EOC review (₪${pr.incl.review}) or a monthly membership (₪${pr.incl.subscription}) is required.` }); }
+    if (!subCovered) {
+      // Needs a one-time review credit. RESERVE it now (synchronously, before the minutes-long
+      // review) so two concurrent requests can't both pass a check-then-consume and get two
+      // reviews for one credit. Refunded in the catch if the review fails.
+      if (!verified || !billing.useReview(revEmail)) { const pr = billing.pricing(); return res.status(402).json({ pay: 'review', error: `A one-time EOC review (₪${pr.incl.review}) or a monthly membership (₪${pr.incl.subscription}) is required.` }); }
+      creditReserved = true;
+    }
   } else {
     // Pre-launch TESTING mode: while NOTHING is configured yet (no Grow billing, no ADMIN_KEY, no
     // PREMIUM_LICENSE_KEYS), the review is OPEN so the owner can test it. The paywall switches on
@@ -528,7 +540,7 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
     const report = await reviewEOC({ type, rows: scoped, limit, attachments: supporting, onProgress: (done, total) => writeLine({ progress: { done, total } }) });
     const annotated = await writeEOC(eocFile.buffer, report.updates);
     const token = cacheDownload(annotated, `EOC-${type}-review.xlsx`);
-    if (billed && !subCovered) billing.useReview(revEmail); // consume a credit only if membership didn't cover it
+    // credit was already RESERVED before the review (see above) — nothing to consume here.
     leads.markTier(req.sessionToken, 'premium'); // record that this lead used premium
     const sb = report.scoreboard;
     // Email a copy to the client (graceful: no-op unless SMTP is configured).
@@ -553,6 +565,7 @@ app.post('/review', uploadReview.fields([{ name: 'eoc', maxCount: 1 }, { name: '
     res.end();
   } catch (err) {
     console.error('[review] error', err.message);
+    if (creditReserved) { billing.grant(revEmail, 'review'); creditReserved = false; } // refund the reserved credit — the review didn't complete
     if (res.headersSent) { try { res.write(JSON.stringify({ error: 'The review failed partway through — please try again.' }) + '\n'); } catch {} res.end(); }
     else res.status(500).json({ error: 'Could not review this EOC. Is it a valid SI 6464 EOC .xlsx (with a Report Body sheet)?' });
   }

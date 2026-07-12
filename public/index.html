@@ -736,7 +736,7 @@ async function ask(){
     const data = await res.json();
     // Free ungated question used (or session expired) → light gate. Remember the question so it's
     // auto-resent the moment they add their email (no orphaned bubble, no retyping).
-    if(res.status===401 && data.gate){ pending.remove(); userBubble.remove(); $('#q').value=q; lastQ=''; pendingAsk=q; openGate(); return; }
+    if(res.status===401 && data.gate){ pending.remove(); userBubble.remove(); $('#q').value=q; lastQ=''; pendingAsk=q; askFilesArr=files; renderAskFiles(); openGate(); return; } // restore attachment so the post-gate resend keeps it
     if(res.status===429 && data.limit){
       pending.classList.remove('pending');
       const packN=(ME.pricing&&ME.pricing.questionsPack)||'';
@@ -987,7 +987,7 @@ const CO_I18N={
 let coLang='he', coKind=null;
 function renderCoSummary(){ if(!coKind) return; const t=CO_I18N[coLang]; const p=(ME&&ME.pricing)||{}; const incl=(p.incl&&p.incl[coKind])||p[coKind]; const ex=(p.ex&&p.ex[coKind]);
   const nm=(PRICING_I18N[coLang]&&PRICING_I18N[coLang].cards[coKind]&&PRICING_I18N[coLang].cards[coKind].name)||coKind;
-  $('#coSummary').innerHTML=`<b>${esc(nm)}</b> — ₪${incl} ${t.incl}${ex?` <span class="muted">(₪${ex} ${t.before})</span>`:''}`; }
+  $('#coSummary').innerHTML = incl ? `<b>${esc(nm)}</b> — ₪${incl} ${t.incl}${ex?` <span class="muted">(₪${ex} ${t.before})</span>`:''}` : `<b>${esc(nm)}</b>`; } // no "₪undefined" before pricing loads
 function applyCheckoutLang(lang){ coLang=lang; const t=CO_I18N[lang]; const he=lang==='he';
   $('#checkoutModal .modal-card').setAttribute('dir', he?'rtl':'ltr');
   $('#coLangToggle').querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.cl===lang));
@@ -1088,7 +1088,12 @@ function toast(msg, kind){
   const kind=new URLSearchParams(location.search).get('renew');
   if(!kind || !['subscription','review','consult','questions'].includes(kind)) return;
   history.replaceState({}, '', location.pathname);
-  setTimeout(()=>{ try{ goCheckout(kind); }catch(e){} }, 600);
+  // Wait until /me pricing has loaded before opening checkout, so the summary isn't "₪undefined".
+  let tries=0;
+  (function waitPricing(){
+    if(window.ME && ME.pricing){ try{ goCheckout(kind); }catch(e){} return; }
+    if(tries++ < 40) setTimeout(waitPricing, 150);
+  })();
 })();
 
 // ---- talk to an expert: book a 30-min online meeting ----

@@ -35,7 +35,7 @@ ABSOLUTE RULES:
 5. APPLIANCE AWARENESS — IAA (Ch.4–6) covers several gas appliances: steam boilers, boilers, furnaces, water heaters, dryers, gas turbines, engines, thermal oil heaters, thermal oxidizers (RTO), etc. Each corpus record lists which appliance types it was observed for. If the client names an appliance, tailor the answer to that appliance and say how common the clause/answer is for it; if the appliance isn't represented in the corpus for that clause, say the requirement still applies but no appliance-specific history is available.
 6. CONVERSATION — this is an ongoing chat. Use the earlier turns to understand follow-up questions (e.g. "what about for a furnace?", "is that enough to close it?", "and the next item?"). Carry over the clause/appliance/topic from earlier unless the client changes it. Be concise on follow-ups; don't repeat what you already said — build on it. The CORPUS/STANDARD extracts attached to the latest turn are the grounding for the current question; earlier turns are for continuity.
 7. Handle Hebrew and English. If the client writes in Hebrew, answer in Hebrew.
-7. End every answer with this exact line on its own:
+8. End every answer with this exact line on its own:
 "Reference guidance only — not a formal ITL determination. Final approval is subject to ITL review of the actual submission."`;
 
 function renderContext(cards) {

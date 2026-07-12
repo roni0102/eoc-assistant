@@ -14,6 +14,7 @@
 // its current behavior (premium = license key, expert = free, ask = 10-question cap).
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -151,7 +152,11 @@ export function markRenewalReminded(email, subUntil) { const r = rec(email); r.r
 // ---- Admin / owner bypass — the key lives ONLY in the ADMIN_KEY env var (never in code/repo).
 // A correct key unlocks unlimited questions + free EOC reviews for that session's email.
 export const adminConfigured = () => !!process.env.ADMIN_KEY;
-export const adminKeyValid = (k) => !!(process.env.ADMIN_KEY && String(k || '').trim() === process.env.ADMIN_KEY);
+export const adminKeyValid = (k) => {
+  const exp = process.env.ADMIN_KEY || ''; const got = String(k || '').trim();
+  if (!exp || got.length !== exp.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(exp)); } catch { return false; }
+};
 export const isAdmin = (email) => !!rec(email).admin;
 export function grantAdmin(email) { const r = rec(email); r.admin = true; persist(); return true; }
 export function useReview(email) { const r = rec(email); if ((r.reviews || 0) <= 0) return false; r.reviews--; persist(); return true; }
@@ -167,61 +172,6 @@ export function grant(email, kind) {
   return true;
 }
 
-// ---- Grow adapter ------------------------------------------------------------------------
-// NOTE: implemented to Grow's documented "Light" server API. The exact field names / status
-// codes / recurring params MUST be confirmed against your Grow developer docs + sandbox once
-// the account is approved (search "VERIFY" here and in GROW_SETUP.md).
-async function growCreatePayment({ kind, email, origin, customer }) {
-  const sum = PRICE[kind]; // already VAT-inclusive (what the customer pays)
-  if (!DESC[kind] || !sum) { const e = new Error('Product not configured (price/kind).'); e.code = 'BAD_KIND'; throw e; }
-  const c = customer || {};
-  const fullName = [c.firstName, c.lastName].filter(Boolean).join(' ').slice(0, 80);
-  const callbackBase = process.env.BASE_URL || origin;
-  const body = new URLSearchParams({
-    pageCode: GROW.pageCode,
-    userId: GROW.userId,
-    sum: String(sum),
-    description: DESC[kind],
-    successUrl: `${origin}/?paid=${kind}`,
-    cancelUrl: `${origin}/?canceled=1`,
-    cgUrl: `${callbackBase}/pay/callback`, // server-to-server confirmation
-    // Prefill the customer's details on Grow's hosted page (VERIFY exact field names vs Grow docs).
-    'pageField[email]': key(email),
-    ...(fullName ? { 'pageField[fullName]': fullName } : {}),
-    ...(c.phone ? { 'pageField[phone]': String(c.phone).slice(0, 20) } : {}),
-    ...(c.country ? { 'pageField[country]': String(c.country).slice(0, 40) } : {}),
-    cField1: key(email), // we read these back on the callback to know who paid for what
-    cField2: kind,
-  });
-  const res = await fetch(`${GROW.base}/createPaymentProcess`, {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
-  });
-  const data = await res.json().catch(() => ({}));
-  // VERIFY: Grow returns { status:1, data:{ url, processId, processToken } } on success.
-  if (Number(data.status) !== 1 || !data?.data?.url) {
-    const e = new Error('Grow create failed: ' + JSON.stringify(data).slice(0, 200));
-    e.code = 'GROW_FAIL'; throw e;
-  }
-  return { url: data.data.url };
-}
-
-/** Create a hosted-payment redirect URL for a product. kind ∈ review|consult|subscription. */
-export async function createCheckout({ kind, email, origin, customer }) {
-  if (!billingAvailable()) { const e = new Error('Billing is not connected yet.'); e.code = 'NO_BILLING'; throw e; }
-  return growCreatePayment({ kind, email, origin, customer });
-}
-
-/**
- * Handle Grow's server-to-server callback: confirm the payment, then grant the entitlement.
- * Returns { ok, email, kind }. VERIFY the status mapping + add the approveTransaction/
- * getPaymentProcessInfo verification call against Grow's docs before going live.
- */
-export async function handleCallback(body) {
-  const b = body || {};
-  const email = b.cField1 || b['data[customFields][cField1]'] || b.customFields?.cField1 || '';
-  const kind = b.cField2 || b['data[customFields][cField2]'] || b.customFields?.cField2 || '';
-  // VERIFY: Grow signals success via status/statusCode — confirm exact field + value.
-  const paid = String(b.status) === '1' || String(b.statusCode) === '2' || String(b['data[statusCode]']) === '2';
-  if (paid && email && kind) { grant(email, kind); return { ok: true, email, kind }; }
-  return { ok: false, email, kind };
-}
+// NOTE: payments run through Morning (see morning.mjs + server.mjs /checkout + /pay/callback).
+// The former Grow adapter (growCreatePayment/createCheckout) and its unauthenticated
+// handleCallback grant-from-body handler were removed — dead code and a forge-a-grant footgun.

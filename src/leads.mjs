@@ -94,9 +94,10 @@ export const freeLimit = () => FREE_LIMIT;
 const FREE_UNGATED = Number(process.env.FREE_UNGATED || 1);
 const freeAsks = (() => { try { return new Map(Object.entries(JSON.parse(fs.readFileSync(DEVICES_PATH, 'utf8')))); } catch { return new Map(); } })();
 function persistDevices() { try { writeJsonAtomic(DEVICES_PATH, Object.fromEntries(freeAsks)); } catch {} }
-/** Consume one ungated free question for a device. {ok:false} once the device's free quota is spent. */
-export function useFreeAsk(deviceId) {
-  const k = String(deviceId || '').slice(0, 64) || 'anon';
+/** Consume one ungated free question, keyed by the caller-supplied anti-abuse key (the client IP,
+ *  which the server derives from cf-connecting-ip — unspoofable). {ok:false} once the quota is spent. */
+export function useFreeAsk(key) {
+  const k = String(key || '').slice(0, 64) || 'anon';
   const n = freeAsks.get(k) || 0;
   if (n >= FREE_UNGATED) return { ok: false, used: n };
   freeAsks.set(k, n + 1); persistDevices();

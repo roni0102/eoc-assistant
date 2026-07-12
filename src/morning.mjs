@@ -140,14 +140,9 @@ export async function getDocument(id) {
   return apiFetch(`documents/${encodeURIComponent(id)}`);
 }
 
-/** Verify a webhook is authentic via the shared secret set in Morning's Webhooks tab.
- *  Accepts the secret from a header or a body field. If no secret is configured, returns false
- *  (so entitlement is never granted on an unverifiable webhook). */
-export function verifyWebhookSecret({ headerSecret, bodySecret }) {
-  const expected = process.env.GREENINVOICE_WEBHOOK_SECRET || '';
-  if (!expected) return false;
-  return headerSecret === expected || bodySecret === expected;
-}
+// NOTE: Morning's webhook carries no shared secret/signature (only the document id), so
+// authenticity is established by RE-FETCHING the document via getDocument() in /pay/callback —
+// see server.mjs. (The former verifyWebhookSecret helper was unused and misleading; removed.)
 
 /** Connection test — proves the sandbox keys authenticate. Used by scripts/morning-test.mjs. */
 export async function diagnose() {
