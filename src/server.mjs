@@ -155,16 +155,23 @@ app.post('/verify/confirm', rateLimit, requireGate, (req, res) => {
 // authenticate, and that payment-link creation works on production (no secret echoed).
 app.get('/paydiag', async (req, res) => {
   if (req.query.k !== process.env.GREENINVOICE_WEBHOOK_SECRET) return res.status(403).json({ error: 'forbidden' });
-  const out = { env: morning.env(), base: morning.baseUrl(), authOk: false };
-  try { const d = await morning.diagnose(); out.authOk = d.ok; if (!d.ok) out.authErr = String(d.error).slice(0, 200); } catch (e) { out.authErr = String(e?.message || e).slice(0, 200); }
-  if (out.authOk) {
+  const out = { env: morning.env(), base: morning.baseUrl(), authOk: false, hasPluginEnv: !!process.env.GREENINVOICE_PLUGIN_ID };
+  let token;
+  try { token = await morning.getToken(); out.authOk = true; } catch (e) { out.authErr = String(e?.message || e).slice(0, 200); return res.json(out); }
+  const p = billing.pricing();
+  const baseBody = { description: 'EOC Assistant — go-live diag', type: 320, lang: 'he', currency: 'ILS', vatType: 0, amount: p.incl.questions, maxPayments: 1,
+    client: { name: 'Diag Test', emails: ['diag@test.co'], add: false },
+    income: [{ description: 'q', quantity: 1, price: p.incl.questions, currency: 'ILS', vatType: 1 }],
+    successUrl: 'https://eoc-assistant.onrender.com/?paid=questions', failureUrl: 'https://eoc-assistant.onrender.com/?canceled=1', notifyUrl: 'https://eoc-assistant.onrender.com/pay/callback' };
+  const tryForm = async (extra) => {
     try {
-      const p = billing.pricing();
-      const r = await morning.createPaymentForm({ kind: 'questions', description: 'EOC Assistant — go-live diag', amountIncl: p.incl.questions,
-        client: { firstName: 'Diag', lastName: 'Test', email: 'diag@test.co', phone: '0500000000', country: 'Israel' }, origin: 'https://eoc-assistant.onrender.com' });
-      out.formOk = !!r.url; if (!r.url) out.formErr = JSON.stringify(r.raw).slice(0, 200);
-    } catch (e) { out.formOk = false; out.formErr = String(e?.message || e).slice(0, 300); }
-  }
+      const r = await fetch(morning.baseUrl() + 'payments/form', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...baseBody, ...extra }) });
+      const t = await r.text(); let j = {}; try { j = JSON.parse(t); } catch {}
+      return j.url ? '✅ URL' : `${r.status} err${j.errorCode}:${(j.errorMessage || t).slice(0, 60)}`;
+    } catch (e) { return 'ERR ' + String(e?.message || e).slice(0, 60); }
+  };
+  out.withSandboxPlugin = process.env.GREENINVOICE_PLUGIN_ID ? await tryForm({ pluginId: process.env.GREENINVOICE_PLUGIN_ID }) : 'n/a';
+  out.noPlugin = await tryForm({});
   res.json(out);
 });
 
