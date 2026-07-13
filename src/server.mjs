@@ -151,6 +151,23 @@ app.post('/verify/confirm', rateLimit, requireGate, (req, res) => {
   res.json({ ok: true, verified: true });
 });
 
+// TEMP go-live diagnostic (gated by the webhook secret) — confirms the ENV, that the keys
+// authenticate, and that payment-link creation works on production (no secret echoed).
+app.get('/paydiag', async (req, res) => {
+  if (req.query.k !== process.env.GREENINVOICE_WEBHOOK_SECRET) return res.status(403).json({ error: 'forbidden' });
+  const out = { env: morning.env(), base: morning.baseUrl(), authOk: false };
+  try { const d = await morning.diagnose(); out.authOk = d.ok; if (!d.ok) out.authErr = String(d.error).slice(0, 200); } catch (e) { out.authErr = String(e?.message || e).slice(0, 200); }
+  if (out.authOk) {
+    try {
+      const p = billing.pricing();
+      const r = await morning.createPaymentForm({ kind: 'questions', description: 'EOC Assistant — go-live diag', amountIncl: p.incl.questions,
+        client: { firstName: 'Diag', lastName: 'Test', email: 'diag@test.co', phone: '0500000000', country: 'Israel' }, origin: 'https://eoc-assistant.onrender.com' });
+      out.formOk = !!r.url; if (!r.url) out.formErr = JSON.stringify(r.raw).slice(0, 200);
+    } catch (e) { out.formOk = false; out.formErr = String(e?.message || e).slice(0, 300); }
+  }
+  res.json(out);
+});
+
 // Lead-capture entry gate: store the visitor's contact details, unlock the session.
 app.post('/lead', rateLimit, (req, res) => {
   const { email, phone, company, light } = req.body || {};
