@@ -172,6 +172,13 @@ app.get('/paydiag', async (req, res) => {
   };
   out.withSandboxPlugin = process.env.GREENINVOICE_PLUGIN_ID ? await tryForm({ pluginId: process.env.GREENINVOICE_PLUGIN_ID }) : 'n/a';
   out.noPlugin = await tryForm({});
+  // Probe for a listable payment plugin/terminal id on the account.
+  const tryGet = async (path) => {
+    try { const r = await fetch(morning.baseUrl() + path, { headers: { Authorization: `Bearer ${token}` } }); const t = await r.text(); return `${r.status}: ${t.slice(0, 220)}`; }
+    catch (e) { return 'ERR ' + String(e?.message || e).slice(0, 60); }
+  };
+  out.plugins = {};
+  for (const path of ['payments/plugins', 'payments/gateways', 'payments', 'account/plugins', 'payment/plugins']) out.plugins[path] = await tryGet(path);
   res.json(out);
 });
 
