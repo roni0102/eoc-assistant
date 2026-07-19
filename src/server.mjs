@@ -257,6 +257,7 @@ app.post('/admin/unlock', rateLimit, requireGate, (req, res) => {
   if (!billing.adminKeyValid(req.body?.key)) return res.status(403).json({ error: 'Incorrect admin key.' });
   const email = leads.emailForToken(req.sessionToken);
   billing.grantAdmin(email);
+  leads.markVerified(req.sessionToken); // correct admin key = proof of identity → verify the session so admin perks apply
   res.json({ ok: true, admin: true });
 });
 

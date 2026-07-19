@@ -48,6 +48,9 @@ const verifiedTokens = new Set();               // tokens that completed the cod
 const verifyCodes = new Map();                  // email -> { code, exp, attempts }
 const VERIFY_TTL = 10 * 60 * 1000;              // codes valid 10 minutes
 export const isVerified = (token) => verifiedTokens.has(token);
+/** Force-verify a token WITHOUT a code — only for privileged flows where identity is already
+ *  proven (e.g. a correct ADMIN_KEY). Never call this from an unauthenticated path. */
+export function markVerified(token) { if (token && sessions.has(token)) { verifiedTokens.add(token); persistSessions(); return true; } return false; }
 /** Begin verification for a token: mint a code for its email. Returns { ok, email, code }. */
 export function startVerification(token) {
   const email = tokenEmail.get(token);
