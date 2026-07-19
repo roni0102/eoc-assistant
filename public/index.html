@@ -308,6 +308,9 @@
   body.dark .tab,body.dark .ptbtn,body.dark .ghost,body.dark .go.ghost2,body.dark .lang-toggle button{background:#202e3f;border-color:var(--line);color:var(--muted)}
   body.dark .chip:hover,body.dark .trbtn:hover{background:#27384c}
   body.dark #tabFree.active{background:#2b3d52;color:var(--ink)}
+  /* keep the Premium tab clearly gold in dark mode (the generic dark-tab rule above washes it out) */
+  body.dark .tab.premium{background:linear-gradient(135deg,#f6c343,#d99106);border-color:#e0a92e;color:#3d2c00}
+  body.dark .tab.premium::before{color:#7a5a00}
   body.dark .corpus{background:#10342a;border-color:#1d5443}
   /* info boxes (were light blue / off-white) */
   body.dark .prem-intro,body.dark .rev .line.exp{background:#15263a;border-color:#2b4060}
