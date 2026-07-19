@@ -619,7 +619,7 @@ function card(c){
     <div><span class="lineno">${esc(c.form||'')} §${esc(c.clause)}</span><span class="sect">${esc(c.section||'')}</span></div>
     ${c.requirement?`<div class="doc"${isHe(c.requirement)?' dir="rtl"':''}>${esc(c.requirement)}</div>`:`<div class="doc">SI 6464 §${esc(c.clause)}</div>`}
 
-    <div class="block"><h4>How this item is actually answered (from the corpus)</h4>
+    <div class="block"><h4>How this item is actually answered</h4>
       ${acc.length?acc.map(acceptedBlock).join('')
         :`<div class="body" style="color:var(--muted)">No anonymized accepted-reply pattern captured for this item yet.</div>`}</div>
 
@@ -702,10 +702,7 @@ function renderAnswer(data){
   } else {
     body = data.cards.map(card).join('');
   }
-  const sources = data.cards && data.cards.length
-    ? `<details class="sources"><summary>Sources — ${data.cards.length} clause card${data.cards.length>1?'s':''} from the corpus</summary>${data.cards.map(card).join('')}</details>`
-    : '';
-  return `${body}${tools}${data.llm_answer?sources:''}`;
+  return `${body}${tools}`;
 }
 
 let busy = false; let lastQ = ''; let lastQt = 0;
