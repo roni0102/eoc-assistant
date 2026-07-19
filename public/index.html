@@ -686,9 +686,6 @@ function renderAnswer(data){
   if(!data.covered){
     return `<div class="answer-b">${esc(data.message)}</div><div class="disc">${esc(data.disclaimer)}</div>`;
   }
-  const ground = data.llm_answer
-    ? `answered by ${esc(data.llm_model||'AI')}, grounded in ${(data.standard_sources&&data.standard_sources.length)?'SI 6464 + ':''}${data.cards.length} past-EOC clause${data.cards.length>1?'s':''}`
-    : `${data.cards.length} matching clause${data.cards.length>1?'s':''} from the corpus`;
   let body, tools='';
   if(data.llm_answer){
     const id = ++ansSeq;
@@ -708,7 +705,7 @@ function renderAnswer(data){
   const sources = data.cards && data.cards.length
     ? `<details class="sources"><summary>Sources — ${data.cards.length} clause card${data.cards.length>1?'s':''} from the corpus</summary>${data.cards.map(card).join('')}</details>`
     : '';
-  return `<div class=" meta-sm">${ground}</div>${body}${tools}${data.llm_answer?sources:''}`;
+  return `${body}${tools}${data.llm_answer?sources:''}`;
 }
 
 let busy = false; let lastQ = ''; let lastQt = 0;
