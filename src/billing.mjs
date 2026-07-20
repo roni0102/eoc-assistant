@@ -41,7 +41,7 @@ const PRICE = {
 };
 const DESC = {
   review: 'EOC full review (one EOC)',
-  consult: '30-minute consultation with an ITL expert',
+  consult: '30-minute consultation with a certified inspection body expert',
   subscription: 'EOC Assistant — monthly membership: unlimited questions + full EOC review',
   questions: QUESTIONS_PER_PACK === 1 ? 'EOC Assistant — 1 more question' : `EOC Assistant — ${QUESTIONS_PER_PACK} more questions`,
 };

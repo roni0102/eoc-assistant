@@ -421,7 +421,7 @@ app.post('/ask', rateLimit, uploadMedia.array('files', 5), async (req, res) => {
         const on = billing.billingAvailable();
         return res.status(429).json({
           limit: true, canSubscribe: on, canBuyQuestions: on,
-          message: `You've used all ${quota.allowance} of your questions.${on ? ' Buy more questions, subscribe for unlimited, or talk to a real ITL expert.' : ' For more, talk to a real ITL expert.'}`,
+          message: `You've used all ${quota.allowance} of your questions.${on ? ' Buy more questions, subscribe for unlimited, or talk to a certified inspection body expert.' : ' For more, talk to a certified inspection body expert.'}`,
         });
       }
     }
