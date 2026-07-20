@@ -162,6 +162,12 @@
   /* free-limit note + remaining counter */
   .limit-msg{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:10px;padding:12px 14px}
   .remaining{font-size:12.5px;color:var(--muted);margin-top:8px}
+  /* persistent "X free questions left" badge under the search box */
+  .freecount{width:fit-content;margin:8px auto 0;text-align:center;font-size:13px;color:var(--brand-dark);
+    background:#eef3fa;border:1px solid #dfeaf6;border-radius:20px;padding:6px 14px}
+  .freecount.none{background:#fdf1e7;border-color:#f5d9c2;color:#9a5b1e}
+  body.dark .freecount{background:#202e3f;border-color:var(--line)}
+  body.dark .freecount.none{background:#3a2a1c;border-color:#5c4327;color:#e8b478}
   /* inline follow-up reply box (email-thread style) under the newest answer */
   .followup-row{margin-top:14px}
   .followup-bar{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
@@ -408,6 +414,7 @@
     </div>
     <div id="askFileList" class="filechips"></div>
     <div class="hint">Ask a question, then keep the conversation going with follow-ups. Answers are generic and anonymous. Attach a drawing or PDF to ask about it.</div>
+    <div class="freecount" id="freeCount" hidden></div>
     <details class="info narrow">
       <summary>ℹ️ Instructions · הוראות שימוש</summary>
     <div class="disclaimer">
@@ -775,6 +782,9 @@ async function ask(){
       inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } });
       pending.appendChild(fu);
     }
+    // keep the persistent "free questions left" badge in sync after every answer
+    if(typeof data.free_remaining==='number') setFreeCount(data.free_remaining, false);
+    else if(data.unlimited) setFreeCount(null, true);
     // show "questions left" when running low
     if(typeof data.free_remaining==='number' && data.free_remaining<=3 && data.free_remaining>0){
       const note=document.createElement('div'); note.className='remaining';
@@ -891,7 +901,18 @@ $('#pricingLangToggle').addEventListener('click',(e)=>{ const b=e.target.closest
 
 // ---- billing (Grow) helpers ----
 let ME = { billing:false, pricing:{}, entitlements:{} };
-async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok){ ME=await r.json(); const fl=$('#freeLimitN'); if(fl && ME.freeLimit) fl.textContent=ME.freeLimit; if(!$('#pricingView').hidden) renderPricing(); } }catch{} }
+// "X free questions left" badge — shown on load (so a returning visitor sees where they stand)
+// and refreshed after every answer. Hidden for unlimited (subscriber/admin) and pre-gate visitors.
+function setFreeCount(n, unlimited){
+  const fc=$('#freeCount'); if(!fc) return;
+  if(unlimited || typeof n!=='number'){ fc.hidden=true; return; }
+  fc.hidden=false;
+  fc.className = n>0 ? 'freecount' : 'freecount none';
+  fc.innerHTML = n>0
+    ? `נותרו לך <b>${n}</b> שאלות חינם · <b>${n}</b> free question${n===1?'':'s'} left`
+    : `נגמרו השאלות החינמיות · no free questions left`;
+}
+async function refreshMe(){ try{ const r=await fetch('/me',{headers:{'x-session':session}}); if(r.ok){ ME=await r.json(); const fl=$('#freeLimitN'); if(fl && ME.freeLimit) fl.textContent=ME.freeLimit; setFreeCount(ME.freeRemaining, ME.unlimited); if(!$('#pricingView').hidden) renderPricing(); } }catch{} }
 // Pricing copy in English & Hebrew (brand/acronym terms — EOC, IB/ITL, Grow, Bit, PayPal — stay in English).
 let pricingLang = 'he'; // Hebrew is the default on the pricing tab
 const PRICING_I18N = {

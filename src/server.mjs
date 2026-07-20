@@ -247,7 +247,12 @@ app.get('/me', (req, res) => {
   const gated = leads.validToken(token);
   const email = gated ? leads.emailForToken(token) : '';
   const ent = email ? billing.entitlements(email) : {};
-  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, email: email || '', gated, verified: gated && leads.isVerified(token), freeLimit: leads.freeLimit() });
+  // Remaining FREE questions for the returning visitor (read-only — never consumes one). Paid
+  // perks only count when the session is verified, mirroring the /ask logic.
+  const verified = gated && leads.isVerified(token);
+  const unlimited = !!(verified && (ent.subActive || ent.admin));
+  const freeRemaining = (gated && !unlimited) ? leads.quotaFor(token, verified ? billing.extraQuestions(email) : 0).remaining : null;
+  res.json({ billing: billing.billingAvailable(), pricing: billing.pricing(), entitlements: ent, admin: !!ent.admin, email: email || '', gated, verified, unlimited, freeRemaining, freeLimit: leads.freeLimit() });
 });
 
 // Admin/owner unlock: a correct ADMIN_KEY (env only) grants this email unlimited questions +
@@ -421,7 +426,7 @@ app.post('/ask', rateLimit, uploadMedia.array('files', 5), async (req, res) => {
         const on = billing.billingAvailable();
         return res.status(429).json({
           limit: true, canSubscribe: on, canBuyQuestions: on,
-          message: `You've used all ${quota.allowance} of your questions.${on ? ' Buy more questions, subscribe for unlimited, or talk to a certified inspection body expert.' : ' For more, talk to a certified inspection body expert.'}`,
+          message: `You've used all ${quota.allowance} of your ${quota.allowance === quota.limit ? 'free ' : ''}questions.${on ? ' Buy more questions, subscribe for unlimited, or talk to a certified inspection body expert.' : ' For more, talk to a certified inspection body expert.'}`,
         });
       }
     }

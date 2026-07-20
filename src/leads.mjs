@@ -106,6 +106,13 @@ export function useFreeAsk(key) {
   freeAsks.set(k, n + 1); persistDevices();
   return { ok: true, used: n + 1, remaining: FREE_UNGATED - (n + 1) };
 }
+/** Read the current free-question quota WITHOUT consuming one — for display ("X free questions left"). */
+export function quotaFor(token, extra = 0) {
+  const key = emailKey(token);
+  const allowance = FREE_LIMIT + (Number(extra) || 0);
+  const used = usageByEmail.get(key) || 0;
+  return { used, remaining: Math.max(0, allowance - used), limit: FREE_LIMIT, allowance };
+}
 /** Consume one free question (per email). Returns {ok, used, remaining, limit}; ok:false when over cap. */
 export function useQuery(token, extra = 0) {
   const key = emailKey(token);
