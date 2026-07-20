@@ -168,6 +168,13 @@
   .freecount.none{background:#fdf1e7;border-color:#f5d9c2;color:#9a5b1e}
   body.dark .freecount{background:#202e3f;border-color:var(--line)}
   body.dark .freecount.none{background:#3a2a1c;border-color:#5c4327;color:#e8b478}
+  /* "previous conversation" header above a restored thread */
+  .history-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    font-size:12.5px;color:var(--muted);border-bottom:1px dashed var(--line);padding-bottom:8px;margin:4px 0 14px}
+  .hist-clear{font-size:12px;color:var(--muted);background:transparent;border:1px solid var(--line);
+    border-radius:14px;padding:4px 12px;cursor:pointer;white-space:nowrap}
+  .hist-clear:hover{background:#eef2f7;color:var(--ink)}
+  body.dark .hist-clear:hover{background:#202e3f}
   /* inline follow-up reply box (email-thread style) under the newest answer */
   .followup-row{margin-top:14px}
   .followup-bar{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);
@@ -674,6 +681,45 @@ function bubble(cls, inner){
   return d;
 }
 
+// Inline reply box under the newest answer (email-thread style). Only the latest answer keeps one.
+function addFollowupBox(container){
+  document.querySelectorAll('.followup-row').forEach(el=>el.remove());
+  const fu=document.createElement('div'); fu.className='followup-row';
+  fu.innerHTML=`<div class="followup-bar">`
+    + `<input class="followup-input" type="text" autocomplete="off" placeholder="שאלת המשך באותו נושא · Ask a follow-up…" />`
+    + `<button class="followup-send" type="button">שליחה · Send</button></div>`
+    + `<div class="followup-note">נספרת כשאלה · uses one question</div>`;
+  const inp=fu.querySelector('.followup-input'), btn=fu.querySelector('.followup-send');
+  const send=()=>{ const t=inp.value.trim(); if(!t) return; inp.value=''; $('#q').value=t; ask(); };
+  btn.onclick=send;
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } });
+  container.appendChild(fu);
+}
+
+// ---- thread history: saved in THIS BROWSER only (no account, no server copy) ----
+const CONVO_KEY='eoc_convo', CONVO_MAX=20; // keep the last ~10 exchanges
+function saveConvo(){ try{ store.set(CONVO_KEY, JSON.stringify(convo.slice(-CONVO_MAX))); }catch{} }
+function clearConvo(){ convo.length=0; store.del(CONVO_KEY); thread.innerHTML=''; }
+function restoreConvo(){
+  let saved=[]; try{ saved=JSON.parse(store.get(CONVO_KEY)||'[]'); }catch{ saved=[]; }
+  if(!Array.isArray(saved) || !saved.length) return;
+  const head=document.createElement('div'); head.className='history-head';
+  head.innerHTML=`<span>שיחה קודמת · Previous conversation <span class="muted">(נשמרת במכשיר זה בלבד · saved on this device only)</span></span>`
+    + `<button type="button" class="hist-clear">נקה · Clear</button>`;
+  head.querySelector('.hist-clear').onclick=clearConvo;
+  thread.appendChild(head);
+  let lastBot=null;
+  for(const m of saved){
+    if(!m || !m.content || !m.role) continue;
+    const d=document.createElement('div');
+    if(m.role==='user'){ d.className='msg user'; d.innerHTML=`<div class="answer-b"${isHe(m.content)?' dir="rtl"':''}>${esc(m.content)}</div>`; }
+    else { d.className='msg bot'; d.innerHTML=`<div class="answer-h">Assistant</div><div class="answer-b"${isHe(m.content)?' dir="rtl"':''}>${md(m.content)}</div>`; lastBot=d; }
+    thread.appendChild(d);
+    convo.push(m);
+  }
+  if(lastBot) addFollowupBox(lastBot); // let them continue the thread straight away
+}
+
 // per-answer translation (English / Hebrew / Russian), fetched once then cached + toggled
 let ansSeq = 0; const ansStore = {};
 const TR_LANGS = { he: { label: 'עברית', rtl: true }, ru: { label: 'Русский', rtl: false } };
@@ -766,22 +812,7 @@ async function ask(){
     if(!res.ok){ pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b notfound">${esc(data.error||'Error')}</div>`; return; }
     pending.classList.remove('pending');
     pending.innerHTML = `<div class="answer-h">Assistant</div>${renderAnswer(data)}`;
-    // Inline reply box under the newest answer (email-thread style): type the follow-up right here,
-    // it keeps the same topic (the conversation context is sent automatically) and counts as one
-    // question. Only the latest answer keeps a box, so the thread stays clean.
-    document.querySelectorAll('.followup-row').forEach(el=>el.remove());
-    {
-      const fu=document.createElement('div'); fu.className='followup-row';
-      fu.innerHTML=`<div class="followup-bar">`
-        + `<input class="followup-input" type="text" autocomplete="off" placeholder="שאלת המשך באותו נושא · Ask a follow-up…" />`
-        + `<button class="followup-send" type="button">שליחה · Send</button></div>`
-        + `<div class="followup-note">נספרת כשאלה · uses one question</div>`;
-      const inp=fu.querySelector('.followup-input'), btn=fu.querySelector('.followup-send');
-      const send=()=>{ const t=inp.value.trim(); if(!t) return; inp.value=''; $('#q').value=t; ask(); };
-      btn.onclick=send;
-      inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } });
-      pending.appendChild(fu);
-    }
+    addFollowupBox(pending); // inline reply box under the newest answer (email-thread style)
     // keep the persistent "free questions left" badge in sync after every answer
     if(typeof data.free_remaining==='number') setFreeCount(data.free_remaining, false);
     else if(data.unlimited) setFreeCount(null, true);
@@ -796,6 +827,7 @@ async function ask(){
     // record the turn so follow-ups have context
     const answerText = data.llm_answer || (data.covered ? `(${data.cards.length} matching clauses shown)` : data.message);
     convo.push({role:'user', content:q}, {role:'assistant', content:answerText});
+    saveConvo(); // keep the thread on this device so it's still here tomorrow
     sharedLoaded = false; // new Q&A recorded — refresh the shared list on next open
   }catch(e){ pending.innerHTML = `<div class="answer-h">Assistant</div><div class="answer-b notfound">Network error: ${esc(e.message)}</div>`; }
   finally{ busy=false; btn.disabled=false; btn.textContent='Ask'; $('#q').focus(); }
@@ -854,6 +886,7 @@ function closeGate(){ $('#gate').hidden=true; document.body.classList.remove('ga
     try{ const r=await fetch('/session',{headers:{'x-session':session}}); if(!r.ok){ session=''; store.del('eoc_session'); } }catch{}
   }
   refreshMe(); // /me is public (pricing); includes entitlements only when a session is present
+  restoreConvo(); // bring back this browser's saved thread so returning visitors see their history
 })();
 let gating=false;
 // LIGHT free-tier gate: email required, company optional, NO phone. On success we get a session
